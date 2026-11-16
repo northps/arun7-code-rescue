@@ -2,6 +2,7 @@
 import { describe, expect, test } from 'vitest';
 import { buildCode, initialState, isComplete, runPuzzle, solutionState, validateLevel } from '../src/game/judge';
 import { ACTS, LEVELS } from '../src/game/levels';
+import { EVENT_SOUNDS, sfx } from '../src/ui/sound';
 
 describe('ข้อมูลด่าน', () => {
   test('id ไม่ซ้ำ และทุกด่านมีโจทย์ 2–3 ข้อ', () => {
@@ -666,5 +667,24 @@ describe('องก์ 7: ผลของโค้ดที่ผิด แล�
     const { l, p, code } = sol('7-4-b');
     expect(runPuzzle(l, p, swap(code, 'closePortal(portalCode());', 'closePortal(49);')).status).toBe('fail');
     expect(runPuzzle(l, p, swap(code, '        fire();', '        delay(1);')).status).toBe('fail');
+  });
+});
+
+describe('เสียงของเหตุการณ์ในฉาก', () => {
+  test('ทุกเหตุการณ์ที่เกิดจากคำตอบและโค้ดตั้งต้นของทุกโจทย์ มีเสียงกำหนดไว้ (หรือตั้งใจให้เงียบ)', () => {
+    const seen = new Set<string>();
+    for (const l of LEVELS) for (const p of l.puzzles) {
+      for (const st of [solutionState(p), initialState(p)]) {
+        if (!isComplete(p, st)) continue;
+        const v = runPuzzle(l, p, buildCode(p, st));
+        for (const c of v.cases) for (const s of c.result.trace) for (const e of s.events) seen.add(e.type);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(20);
+    expect([...seen].filter((t) => !(t in EVENT_SOUNDS))).toEqual([]);
+  });
+  test('เล่นเสียงในที่ที่ไม่มี WebAudio แล้วไม่พัง', () => {
+    for (const type of Object.keys(EVENT_SOUNDS)) expect(() => sfx.event({ type })).not.toThrow();
+    expect(() => sfx.finale()).not.toThrow();
   });
 });

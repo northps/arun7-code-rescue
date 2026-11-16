@@ -30,6 +30,8 @@ export interface PlayNav {
   toMap(): void;
   next(level: Level): void;
   hasNext(level: Level): boolean;
+  /** หน้าจอจบเกม (หลังด่านสุดท้าย) */
+  toEnd(): void;
 }
 
 export class PlayScreen {
@@ -599,6 +601,7 @@ export class PlayScreen {
       this.setCur(step.line);
       if (!(driving && trace.length > 60)) sfx.step();
       for (const ev of step.events) {
+        sfx.event(ev);
         const d = this.view.apply(ev);
         if (d) await sleep(d * (ev.type === 'rush' ? 1 : speed()));
         if (id !== this.playId) return;
@@ -729,7 +732,7 @@ export class PlayScreen {
         h('button', { class: 'btn ghost', onclick: () => this.nav.toMap() }, 'แผนที่ด่าน'),
         hasNext
           ? h('button', { class: 'btn run', onclick: () => this.nav.next(L) }, 'ด่านต่อไป ▶')
-          : h('button', { class: 'btn run', onclick: () => this.nav.toMap() }, `จบองก์ ${L.act} ▶`),
+          : h('button', { class: 'btn run', onclick: () => this.nav.toEnd() }, 'ดูตอนจบ ▶'),
       ),
     );
   }
