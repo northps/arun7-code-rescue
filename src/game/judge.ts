@@ -123,6 +123,8 @@ export function specFor(level: Level, p: Puzzle, c?: Case): WorldSpec {
     ...base,
     sensors: { ...(base.sensors ?? {}), ...(c.sensors ?? {}) },
     inputs: c.inputs ?? base.inputs,
+    feeds: c.feeds ? { ...(base.feeds ?? {}), ...c.feeds } : base.feeds,
+    vault: c.vault ?? base.vault,
     aliens: c.aliens ?? (typeof c.sensors?.scanAliens === 'number' ? c.sensors.scanAliens : base.aliens),
     targets: c.targets ?? base.targets,
     shield: c.shield ?? base.shield,
@@ -178,6 +180,12 @@ function judge(goal: Goal, sim: WorldSim, res: RunResult): string[] {
     if (twice) out.push(`มีแผงที่ถูกสั่งเปิดซ้ำ ${twice} ช่อง`);
     if (sim.badCell) out.push(`สั่ง powerCell นอกตาราง: แถวต้องเป็น 0 ถึง ${g.rows - 1} และช่องต้องเป็น 0 ถึง ${g.cols - 1}`);
   }
+  if (sim.overFeed) {
+    const n = sim.spec.feeds?.[sim.overFeed]?.length ?? 0;
+    out.push(`เรียก ${sim.overFeed}() เกินจำนวน: เซนเซอร์มีค่าให้อ่านแค่ ${n} ครั้ง ลองนับจำนวนรอบของลูปอีกครั้ง`);
+  }
+  if (sim.lockedOut) out.push(`ลองรหัสผิดครบ ${sim.spec.vault?.tries} ครั้ง คลังล็อกตัวเอง! ต้องหาวิธีที่ใช้จำนวนครั้งน้อยกว่านี้`);
+  else if (goal.vaultOpen && !sim.vaultOpen) out.push(sim.vaultTries ? 'คลังยังไม่เปิด: ยังไม่ได้ลองรหัสที่ถูก' : 'ยังไม่ได้เรียก tryCode() เลย');
   if (sim.clampJam) out.push('แขนยึดติดขัด! ต้องสั่ง unlockClamp(); ก่อน releaseClamp(); ทุกครั้ง และห้ามปลดเกินจำนวนแขนที่มี');
   if (goal.clampsLeft !== undefined && !sim.clampJam && sim.clamps > goal.clampsLeft) out.push(`แขนยึดยังจับยานอยู่อีก ${sim.clamps} ตัว`);
   if (sim.chuteTorn) out.push('กางร่มผิดจังหวะ ร่มขาด! ต้องเช็กความสูงให้อยู่ในช่วงปลอดภัยก่อน');
@@ -246,7 +254,7 @@ export function runPuzzle(level: Level, p: Puzzle, code: string): Verdict {
       return { status: 'compile', compileError: result.compileError, shown: run, cases: [run], warnings: [], code };
     }
     const reasons = judge(goal, sim, result);
-    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped || sim.hostageHit || sim.clampJam || sim.chuteTorn });
+    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped || sim.hostageHit || sim.clampJam || sim.chuteTorn || sim.lockedOut });
   }
   const firstFail = runs.find((r) => !r.pass && r.drama) ?? runs.find((r) => !r.pass);
   const shown = firstFail ?? runs[0];
@@ -269,6 +277,7 @@ export function validateLevel(level: Level): string[] {
     const spec = specFor(level, p);
     const m = parseMap(spec.map);
     if (m.find('B').length !== 1) out.push(`${p.id}: แผนที่ต้องมี B หนึ่งตัว`);
+    if (spec.shelf && m.find('S').length !== 1) out.push(`${p.id}: ใช้ shelf ต้องมี S หนึ่งช่องในแผนที่`);
     if (p.kind === 'blank' && slotCount(p.code) !== p.answer.length) out.push(`${p.id}: จำนวนช่องไม่ตรงกับ answer`);
     if (p.kind === 'blank') for (const a of p.answer) if (!p.bank.includes(a)) out.push(`${p.id}: "${a}" ไม่อยู่ใน bank`);
     if (p.kind === 'fix') {

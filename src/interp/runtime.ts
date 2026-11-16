@@ -326,9 +326,14 @@ export class Runtime {
         return {
           type: v.type,
           name,
-          get: () => ({ t: v.type, v: okIdx ? arr[idx] : v.type === 'String' ? '' : -21846 }),
+          get: () => {
+            const got = okIdx ? arr[idx] : v.type === 'String' ? '' : -21846;
+            this.emit({ type: 'arr', name, idx, ok: okIdx, size: arr.length, value: got });
+            return { t: v.type, v: got };
+          },
           set: (val: Val) => {
             if (okIdx) arr[idx] = this.coerce(val, v.type).v;
+            this.emit({ type: 'arr', name, idx, ok: okIdx, size: arr.length, write: true, value: okIdx ? arr[idx] : undefined });
           },
         };
       }
@@ -493,7 +498,11 @@ export class Runtime {
       const s = obj.v as string;
       switch (e.method) {
         case 'length': return { t: 'int', v: s.length };
-        case 'charAt': return { t: 'char', v: s.charCodeAt(this.num(args[0])) || 0 };
+        case 'charAt': {
+          const at = Math.trunc(this.num(args[0]));
+          if (at < 0 || at >= s.length) this.warn('strRange', { idx: at, max: s.length - 1, len: s.length });
+          return { t: 'char', v: s.charCodeAt(at) || 0 };
+        }
         case 'toInt': return { t: 'long', v: parseInt(s, 10) || 0 };
         case 'toFloat': return { t: 'float', v: parseFloat(s) || 0 };
         case 'indexOf': return { t: 'int', v: s.indexOf(valText(args[0])) };
@@ -666,6 +675,8 @@ export class Runtime {
           const zero = s.type === 'String' ? '' : s.type === 'bool' ? false : 0;
           v.arr = Array.from({ length: Math.max(0, size) }, (_, i) => (i < list.length ? list[i] : zero));
           v.init = true;
+          this.line = it.line;
+          this.emit({ type: 'arrInit', name: it.name, values: [...v.arr], filled: list.length > 0 });
         }
       } else if (it.init) {
         this.line = it.line;

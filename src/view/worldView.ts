@@ -91,6 +91,16 @@ export class WorldView {
   crew: THREE.Group | null = null;
   shieldMesh: THREE.Mesh | null = null;
   cellGroup = new THREE.Group();
+  /** ชั้นวางอาร์เรย์ (องก์ 4): แต่ละช่องมีป้ายค่าและเลข index */
+  shelf: {
+    name: string;
+    slots: { box: THREE.Object3D; ctx: CanvasRenderingContext2D; tex: THREE.CanvasTexture; x: number; text: string }[];
+    pos: THREE.Vector3;
+    step: number;
+    ghost: THREE.Mesh;
+  } | null = null;
+  spaceBody: THREE.Object3D[] = [];
+  calm = false;
   hemi = new THREE.HemisphereLight(0x8fb4ff, 0x0c1018, 0.75);
   key = new THREE.DirectionalLight(0xfff4e6, 2.6);
   alarm = new THREE.PointLight(C.red, 0, 14, 1.6);
@@ -225,12 +235,14 @@ export class WorldView {
     planet.position.set(40, -58, -50);
     planet.rotation.z = 0.4;
     this.scene.add(planet);
+    this.spaceBody.push(planet);
     const rim = new THREE.Mesh(
       new THREE.SphereGeometry(27.2, 48, 32),
       new THREE.MeshBasicMaterial({ color: 0x4fd8ff, transparent: true, opacity: 0.05, side: THREE.BackSide }),
     );
     rim.position.copy(planet.position);
     this.scene.add(rim);
+    this.spaceBody.push(rim);
     const sun = new THREE.DirectionalLight(0xfff0d8, 0.5);
     sun.position.set(-30, 10, -30);
     this.scene.add(sun);
@@ -263,6 +275,7 @@ export class WorldView {
     this.turret = null;
     this.crew = null;
     this.shieldMesh = null;
+    this.shelf = null;
     this.doorL = this.doorR = null;
     this.mood = 'idle';
     for (const p of this.particles) this.scene.remove(p.m);
@@ -272,12 +285,16 @@ export class WorldView {
     this.w = m.w;
     this.h = m.h;
     const tileGeo = new RoundedBoxGeometry(0.94, 0.12, 0.94, 2, 0.03);
-    const tileA = std(C.tile, { metalness: 0.65, roughness: 0.38 });
-    const tileB = std(C.tileAlt, { metalness: 0.65, roughness: 0.42 });
-    const seam = glow(C.seam, 0.55);
-    const wallMat = std(C.wall, { metalness: 0.55, roughness: 0.5 });
-    const wallDark = std(C.wallDark, { metalness: 0.6, roughness: 0.45 });
-    const trim = glow(C.red, 1.6);
+    const planet = spec.theme === 'planet';
+    this.calm = planet;
+    (this.scene.background as THREE.Color).setHex(planet ? 0x06171d : C.bg);
+    for (const o of this.spaceBody) o.visible = !planet;
+    const tileA = planet ? std(0x33443f, { metalness: 0.15, roughness: 0.85 }) : std(C.tile, { metalness: 0.65, roughness: 0.38 });
+    const tileB = planet ? std(0x3c4f48, { metalness: 0.15, roughness: 0.9 }) : std(C.tileAlt, { metalness: 0.65, roughness: 0.42 });
+    const seam = planet ? glow(0x2bd4a0, 0.3) : glow(C.seam, 0.55);
+    const wallMat = planet ? std(0x55625c, { metalness: 0.2, roughness: 0.85 }) : std(C.wall, { metalness: 0.55, roughness: 0.5 });
+    const wallDark = planet ? std(0x2f3d3a, { metalness: 0.3, roughness: 0.7 }) : std(C.wallDark, { metalness: 0.6, roughness: 0.45 });
+    const trim = glow(planet ? 0x3dff9a : C.red, 1.6);
     this.trims.push(trim);
     const lastRow = m.h - 1;
 
@@ -345,8 +362,12 @@ export class WorldView {
         case 'U':
           this.buildTurret(p);
           break;
+        case 'S':
+          if (spec.shelf) this.buildShelf(p, spec.shelf);
+          break;
       }
     }
+    if (planet) this.buildPlanetDecor(m.w, m.h);
     this.buildExtras(spec);
     // บิต
     this.bot = this.buildBot();
@@ -355,6 +376,153 @@ export class WorldView {
     this.alert = true;
     this.fitCamera();
     this.reset();
+  }
+
+  /** ฉากดาวเวฬา: พื้นดิน ผลึกเรืองแสง ตะไคร่บนซากผนัง และดวงจันทร์ */
+  private buildPlanetDecor(w: number, h: number): void {
+    let seed = w * 31 + h * 17;
+    const rnd = () => {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    };
+    const ground = new THREE.Mesh(new THREE.CircleGeometry(40, 48), std(0x0c2a2b, { metalness: 0, roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.position.y = -0.12;
+    ground.receiveShadow = true;
+    this.root.add(ground);
+    const moon = new THREE.Mesh(new THREE.SphereGeometry(7, 32, 20), new THREE.MeshStandardMaterial({ color: 0x9fd8d0, emissive: 0x2f7f86, emissiveIntensity: 0.5, roughness: 1 }));
+    moon.position.set(-26, 22, -70);
+    this.root.add(moon);
+    const moon2 = new THREE.Mesh(new THREE.SphereGeometry(2.6, 24, 16), new THREE.MeshStandardMaterial({ color: 0xffc58a, emissive: 0x8a4a20, emissiveIntensity: 0.6, roughness: 1 }));
+    moon2.position.set(18, 26, -75);
+    this.root.add(moon2);
+    const crystalMats = [glow(0x35e0ff, 1.8), glow(0x7dffb8, 1.6), glow(0xd98bff, 1.5)];
+    const rockMat = std(0x26393a, { metalness: 0.1, roughness: 0.95 });
+    const mossMat = std(0x245c3c, { metalness: 0, roughness: 1 });
+    const rx = w / 2 + 0.6, rz = h / 2 + 0.6;
+    for (let i = 0; i < 26; i++) {
+      // วางรอบนอกห้อง ไม่บังด้านหน้ากล้อง
+      const a = rnd() * Math.PI * 2;
+      const d = 1 + rnd() * 5;
+      const x = Math.cos(a) * (rx + d), z = Math.sin(a) * (rz + d) - 1.2;
+      if (z > rz + 0.4) continue;
+      if (rnd() < 0.55) {
+        const g = new THREE.Group();
+        const n = 2 + Math.floor(rnd() * 3);
+        const mat = crystalMats[Math.floor(rnd() * crystalMats.length)];
+        for (let k = 0; k < n; k++) {
+          const hgt = 0.35 + rnd() * 0.9;
+          const c = new THREE.Mesh(new THREE.ConeGeometry(0.09 + rnd() * 0.1, hgt, 5), mat);
+          c.position.set((rnd() - 0.5) * 0.4, hgt / 2 - 0.1, (rnd() - 0.5) * 0.4);
+          c.rotation.set((rnd() - 0.5) * 0.5, rnd() * 3, (rnd() - 0.5) * 0.5);
+          g.add(c);
+        }
+        g.position.set(x, 0, z);
+        this.root.add(g);
+      } else {
+        const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.3 + rnd() * 0.6, 0), rockMat);
+        r.position.set(x, 0.05, z);
+        r.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+        r.scale.y = 0.6;
+        this.root.add(r);
+      }
+    }
+    // ตะไคร่บนผนัง
+    for (let i = 0; i < w * 2; i++) {
+      const top = rnd() < 0.5;
+      const x = (rnd() - 0.5) * (w - 0.4);
+      const moss = new THREE.Mesh(new THREE.SphereGeometry(0.12 + rnd() * 0.1, 8, 6), mossMat);
+      moss.scale.y = 0.35;
+      if (top) moss.position.set(x, 1.29, -(h - 1) / 2 + (rnd() - 0.5) * 0.6);
+      else moss.position.set(((rnd() < 0.5 ? -1 : 1) * (w - 1)) / 2, 1.29, (rnd() - 0.5) * (h - 2));
+      this.root.add(moss);
+    }
+  }
+
+  /** ชั้นวางอาร์เรย์: ช่องเรียงซ้ายไปขวา index 0 อยู่ซ้ายสุด */
+  private buildShelf(p: THREE.Vector3, sh: NonNullable<WorldSpec['shelf']>): void {
+    const n = Math.max(1, sh.size);
+    const step = Math.min(0.66, 4.3 / n);
+    const width = n * step;
+    const bench = new THREE.Mesh(new RoundedBoxGeometry(width + 0.24, 0.46, 0.62, 2, 0.04), std(0x2b3948, { metalness: 0.6, roughness: 0.4 }));
+    bench.position.set(p.x, 0.26, p.z);
+    bench.castShadow = true;
+    bench.receiveShadow = true;
+    this.root.add(bench);
+    const slots: NonNullable<WorldView['shelf']>['slots'] = [];
+    const idxMat = (i: number): THREE.MeshBasicMaterial => {
+      const cv = document.createElement('canvas');
+      cv.width = 96;
+      cv.height = 64;
+      const cx = cv.getContext('2d')!;
+      cx.fillStyle = '#0a1622';
+      cx.fillRect(0, 0, 96, 64);
+      cx.fillStyle = '#ffd166';
+      cx.font = '700 40px "IBM Plex Mono", Consolas, monospace';
+      cx.textAlign = 'center';
+      cx.textBaseline = 'middle';
+      cx.fillText('[' + i + ']', 48, 34);
+      const t = new THREE.CanvasTexture(cv);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return new THREE.MeshBasicMaterial({ map: t });
+    };
+    for (let i = 0; i < n; i++) {
+      const x = p.x - width / 2 + step * (i + 0.5);
+      const g = new THREE.Group();
+      const box = new THREE.Mesh(new RoundedBoxGeometry(step * 0.86, 0.5, 0.5, 2, 0.04), std(0x16222e, { metalness: 0.7, roughness: 0.3 }));
+      box.castShadow = true;
+      g.add(box);
+      const cv = document.createElement('canvas');
+      cv.width = 160;
+      cv.height = 128;
+      const ctx = cv.getContext('2d')!;
+      const tex = new THREE.CanvasTexture(cv);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const face = new THREE.Mesh(
+        new THREE.PlaneGeometry(step * 0.76, 0.4),
+        new THREE.MeshStandardMaterial({ map: tex, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 1, roughness: 0.4 }),
+      );
+      face.position.z = 0.255;
+      g.add(face);
+      const top = face.clone();
+      top.rotation.x = -Math.PI / 2;
+      top.position.set(0, 0.255, 0);
+      top.scale.y = 1.1;
+      g.add(top);
+      g.position.set(x, 0.75, p.z);
+      this.root.add(g);
+      const tag = new THREE.Mesh(new THREE.PlaneGeometry(step * 0.6, 0.24), idxMat(i));
+      tag.position.set(x, 0.3, p.z + 0.315);
+      this.root.add(tag);
+      slots.push({ box: g, ctx, tex, x, text: '' });
+    }
+    const ghost = new THREE.Mesh(
+      new THREE.BoxGeometry(step * 0.86, 0.5, 0.5),
+      new THREE.MeshBasicMaterial({ color: C.red, transparent: true, opacity: 0.55, wireframe: true }),
+    );
+    ghost.visible = false;
+    this.root.add(ghost);
+    this.shelf = { name: sh.name, slots, pos: p.clone(), step, ghost };
+  }
+
+  private drawSlot(i: number, text: string, state: 'idle' | 'read' | 'write' = 'idle'): void {
+    const s = this.shelf?.slots[i];
+    if (!s) return;
+    s.text = text;
+    const col = { idle: '#35e0ff', read: '#3dff9a', write: '#ffb020' }[state];
+    const { ctx } = s;
+    ctx.fillStyle = state === 'idle' ? '#06141f' : '#0d2a2a';
+    ctx.fillRect(0, 0, 160, 128);
+    ctx.strokeStyle = col;
+    ctx.lineWidth = state === 'idle' ? 6 : 12;
+    ctx.strokeRect(5, 5, 150, 118);
+    ctx.fillStyle = state === 'idle' ? '#e8f6ff' : col;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const size = text.length <= 2 ? 76 : text.length === 3 ? 62 : text.length === 4 ? 50 : 38;
+    ctx.font = `700 ${size}px "IBM Plex Mono", Consolas, monospace`;
+    ctx.fillText(text, 80, 68);
+    s.tex.needsUpdate = true;
   }
 
   private buildDoor(p: THREE.Vector3): void {
@@ -871,8 +1039,17 @@ export class WorldView {
       fx.chute.position.set(0, 0, 0);
       for (const l of fx.legs) l.visible = false;
     }
+    if (this.shelf) {
+      const vals = spec.shelf?.values;
+      this.shelf.ghost.visible = false;
+      this.shelf.slots.forEach((s, i) => {
+        s.box.position.y = 0.75;
+        this.drawSlot(i, vals && vals[i] !== undefined ? String(vals[i]) : '?');
+      });
+    }
     const firstAction = Object.values(spec.actions ?? {})[0];
-    this.drawPanel(firstAction ? firstAction.label : 'SERIAL', firstAction ? '- - -' : '', 'idle');
+    if (spec.vault) this.drawPanel('รหัสคลัง', `ลองได้ ${spec.vault.tries} ครั้ง`, 'idle');
+    else this.drawPanel(firstAction ? firstAction.label : 'SERIAL', firstAction ? '- - -' : '', 'idle');
     this.flashEl.className = 'view-flash';
     this.alert = true;
   }
@@ -1013,8 +1190,63 @@ export class WorldView {
         this.flash('red');
         return 300;
       case 'sense':
+        if (ev.over) {
+          this.flash('red');
+          this.floatText(`${ev.name}() ไม่มีค่าให้อ่านแล้ว!`, this.bot.position.clone().setY(1.5), '#ff5566');
+          return 750;
+        }
         this.floatText(`${ev.name}() → ${ev.value}`, this.bot.position.clone().setY(1.5), '#7fe9ff');
-        return 650;
+        return ev.nth ? 420 : 650;
+      case 'arrInit': {
+        const sh = this.shelf;
+        if (!sh || ev.name !== sh.name) return 0;
+        const vals = ev.values as unknown[];
+        sh.slots.forEach((_, i) => this.drawSlot(i, vals[i] === undefined ? '?' : ev.filled ? String(vals[i]) : '·'));
+        return 300;
+      }
+      case 'arr': {
+        const sh = this.shelf;
+        if (!sh || ev.name !== sh.name) return 0;
+        const idx = ev.idx as number;
+        if (!ev.ok) {
+          const side = idx < 0 ? -1 : sh.slots.length;
+          const x = sh.pos.x - (sh.slots.length * sh.step) / 2 + sh.step * (side + 0.5);
+          sh.ghost.position.set(x, 0.75, sh.pos.z);
+          sh.ghost.visible = true;
+          this.flash('red');
+          this.floatText(`ไม่มีช่อง [${idx}]!`, new THREE.Vector3(x, 1.5, sh.pos.z), '#ff5566');
+          this.burst(new THREE.Vector3(x, 0.9, sh.pos.z), C.red, 12);
+          this.tween(900, (k) => {
+            (sh.ghost.material as THREE.MeshBasicMaterial).opacity = 0.25 + 0.45 * Math.abs(Math.sin(k * Math.PI * 3));
+          });
+          return 800;
+        }
+        const s = sh.slots[idx];
+        if (!s) return 0;
+        const text = ev.write || s.text === '?' || s.text === '·' ? String(ev.value) : s.text;
+        this.drawSlot(idx, text, ev.write ? 'write' : 'read');
+        this.tween(
+          380,
+          (k) => {
+            s.box.position.y = 0.75 + Math.sin(k * Math.PI) * 0.16;
+          },
+          () => {
+            s.box.position.y = 0.75;
+            this.drawSlot(idx, text, 'idle');
+          },
+        );
+        return 300;
+      }
+      case 'vault': {
+        const res = ev.res as number;
+        const word = res === 0 ? 'ถูกต้อง!' : res > 0 ? 'มากไป ▼' : 'น้อยไป ▲';
+        this.drawPanel('รหัสคลัง', `ลอง ${ev.guess}\n${word}\nเหลือ ${ev.left} ครั้ง`, res === 0 ? 'ok' : 'info');
+        if (this.panel) {
+          this.floatText(`${ev.guess}: ${word}`, this.panel.pos.clone().setY(1.7), res === 0 ? '#5dffb0' : '#ffd166');
+          this.burst(this.panel.pos.clone(), res === 0 ? C.green : C.amber, 8);
+        }
+        return 620;
+      }
       case 'input':
         this.floatText(`รับค่า ${ev.value}`, this.bot.position.clone().setY(1.5), '#ffd166');
         return 650;
@@ -1363,15 +1595,15 @@ export class WorldView {
     for (const p of this.pads) p.scale.setScalar(1 + Math.sin(t * 3) * 0.05);
     const pulse = 0.5 + 0.5 * Math.sin(t * 3.2);
     for (const m of this.trims) {
-      if (this.alert) {
+      if (this.alert && !this.calm) {
         m.emissive.setHex(C.red);
         m.emissiveIntensity = 0.5 + pulse * 1.5;
       } else {
-        m.emissive.setHex(C.cyan);
-        m.emissiveIntensity = 1.3;
+        m.emissive.setHex(this.calm && this.alert ? 0x2bd4a0 : C.cyan);
+        m.emissiveIntensity = this.calm && this.alert ? 0.7 : 1.3;
       }
     }
-    this.alarm.intensity = this.alert ? pulse * (this.spec?.dark ? 2 : 5) : 0;
+    this.alarm.intensity = this.alert && !this.calm ? pulse * (this.spec?.dark ? 2 : 5) : 0;
     if (this.pod) this.pod.rotation.y = this.podFx ? t * 0.35 : Math.sin(t * 0.5) * 0.1;
     if (this.podFx?.burning) {
       const f = this.podFx.flame;

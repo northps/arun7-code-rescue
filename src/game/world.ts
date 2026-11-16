@@ -66,6 +66,12 @@ export class WorldSim implements Host {
   clampJam = false;
   engine = false;
   chuteTorn = false;
+  feedPos: Record<string, number> = {};
+  /** ชื่อเซนเซอร์ที่ถูกอ่านเกินจำนวนค่าที่มี */
+  overFeed: string | null = null;
+  vaultTries = 0;
+  vaultOpen = false;
+  lockedOut = false;
 
   constructor(public spec: WorldSpec, public goal: Goal = {}) {
     const m = parseMap(spec.map);
@@ -96,8 +102,12 @@ export class WorldSim implements Host {
     for (const [name, a] of Object.entries(spec.actions ?? {})) this.fns[name] = { min: a.args, max: a.args };
     for (const name of Object.keys(spec.sensors ?? {})) {
       const v = spec.sensors![name];
-      this.fns[name] = { min: 0, max: 0, ret: typeof v === 'string' ? 'char' : Number.isInteger(v) ? 'int' : 'float' };
+      this.fns[name] = { min: 0, max: 0, ret: typeof v === 'string' ? (v.length === 1 ? 'char' : 'String') : Number.isInteger(v) ? 'int' : 'float' };
     }
+    for (const [name, list] of Object.entries(spec.feeds ?? {})) {
+      this.fns[name] = { min: 0, max: 0, ret: list.every((x) => Number.isInteger(x)) ? 'int' : 'float' };
+    }
+    if (spec.vault) this.fns.tryCode = { min: 1, max: 1, ret: 'int' };
     this.fns.pinMode = { min: 2, max: 2 };
     this.fns.digitalWrite = { min: 2, max: 2 };
     this.fns.digitalRead = { min: 1, max: 1, ret: 'int' };
@@ -110,7 +120,7 @@ export class WorldSim implements Host {
   blocked(x: number, y: number): boolean {
     const c = this.cell(x, y);
     if (c === 'D') return this.door !== 'open';
-    return c === '#' || c === ' ' || c === 'X' || c === 'T' || c === 'L' || c === 'G' || c === 'W' || c === 'A' || c === 'U';
+    return c === '#' || c === ' ' || c === 'S' || c === 'X' || c === 'T' || c === 'L' || c === 'G' || c === 'W' || c === 'A' || c === 'U';
   }
   onPad(): boolean {
     return this.cell(this.bot.x, this.bot.y) === 'P';
@@ -255,6 +265,24 @@ export class WorldSim implements Host {
       case 'beginDescent':
         ctx.emit({ type: 'descent' });
         return;
+      case 'tryCode': {
+        const v = this.spec.vault!;
+        const n = Math.trunc(Number(args[0]));
+        if (this.vaultOpen) return 0;
+        this.vaultTries++;
+        const res = n === v.secret ? 0 : n > v.secret ? 1 : -1;
+        const left = v.tries - this.vaultTries;
+        ctx.emit({ type: 'vault', guess: n, res, left, tries: this.vaultTries });
+        if (res === 0) {
+          this.vaultOpen = true;
+          this.openDoor(ctx, 'panel');
+        } else if (left <= 0) {
+          this.lockedOut = true;
+          this.halted = 'lockout';
+          ctx.emit({ type: 'alarm' });
+        }
+        return res;
+      }
       case 'pinMode':
         this.pinMode[Number(args[0])] = Number(args[1]);
         return;
@@ -285,12 +313,21 @@ export class WorldSim implements Host {
         return;
       }
     }
+    const feed = this.spec.feeds?.[name];
+    if (feed) {
+      const i = this.feedPos[name] ?? 0;
+      this.feedPos[name] = i + 1;
+      if (i >= feed.length) this.overFeed = name;
+      const v = feed[Math.min(i, feed.length - 1)] ?? 0;
+      ctx.emit({ type: 'sense', name, value: v, nth: i + 1, over: i >= feed.length });
+      return v;
+    }
     const action = this.spec.actions?.[name];
     if (action) {
       this.lastArgs[name] = args;
       const want = this.goal.set?.[name];
       const ok = want ? want.length === args.length && want.every((w, i) => sameValue(args[i], w)) : undefined;
-      ctx.emit({ type: 'panel', name, label: action.label, text: args.map(showValue).join(', '), ok });
+      ctx.emit({ type: 'panel', name, label: action.label, text: args.length ? args.map(showValue).join(', ') : 'ON', ok });
       if (ok === false) ctx.emit({ type: 'alarm' });
       if (ok && action.opensDoor) this.openDoor(ctx, 'panel');
       return;

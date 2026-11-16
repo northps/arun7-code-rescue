@@ -204,3 +204,144 @@ describe('องก์ 3: ผลของโค้ดที่ผิด', () => 
     expect(v.status).toBe('fail');
   });
 });
+
+describe('องก์ 4: ผลของโค้ดที่ผิด', () => {
+  const find = (id: string) => {
+    for (const l of LEVELS) for (const p of l.puzzles) if (p.id === id) return { l, p };
+    throw new Error(id);
+  };
+  const events = (v: ReturnType<typeof runPuzzle>, type: string) =>
+    v.cases.flatMap((c) => c.result.trace.flatMap((s) => s.events.filter((e) => e.type === type)));
+  const wrap = (body: string, top = '') => `${top}\nvoid setup() {\n${body}\n}\nvoid loop() {\n}`;
+
+  test('4-1-a last slot as [5] reads past the end', () => {
+    const { l, p } = find('4-1-a');
+    const v = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['5', '1', '5'] }));
+    expect(v.status).toBe('fail');
+    expect(v.warnings.map((w) => w.kind)).toContain('arrayRange');
+    expect(events(v, 'arr').some((e) => e.ok === false && e.idx === 5)).toBe(true);
+  });
+  test('4-1-b counting from 1: starter fails, every single fix alone still fails', () => {
+    const { l, p } = find('4-1-b');
+    expect(runPuzzle(l, p, buildCode(p, initialState(p))).status).toBe('fail');
+    for (const ln of [5, 6, 7, 8]) {
+      const picks: Record<number, number> = { 5: 1, 6: 1, 7: 1, 8: 1 };
+      picks[ln] = 0;
+      expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks })).status).toBe('fail');
+    }
+  });
+  test('4-1-c printing the answers without an array is refused', () => {
+    const { l, p } = find('4-1-c');
+    const v = runPuzzle(l, p, wrap('  Serial.begin(9600);\n  Serial.println(45);\n  sendWeight(30);'));
+    expect(v.status).toBe('fail');
+  });
+  test('4-2-a i <= 5 reads slot 5, starting at 1 skips slot 0', () => {
+    const { l, p } = find('4-2-a');
+    const v = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['0', '<=', 'i'] }));
+    expect(v.status).toBe('fail');
+    expect(v.warnings.map((w) => w.kind)).toContain('arrayRange');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['1', '<', 'i'] })).status).toBe('fail');
+  });
+  test('4-2-b each fix alone is not enough', () => {
+    const { l, p } = find('4-2-b');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 6: 1 } })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 7: 1 } })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 6: 2, 7: 1 } })).status).toBe('fail');
+  });
+  test('4-2-c reading the sensor 7 times is reported', () => {
+    const { l, p } = find('4-2-c');
+    const v = runPuzzle(l, p, wrap('  Serial.begin(9600);\n  int total = 0;\n  for (int i = 0; i <= 6; i++) {\n    panel[i] = readPanel();\n    total += panel[i];\n  }\n  for (int i = 5; i >= 0; i--) {\n    Serial.println(panel[i]);\n  }\n  setPower(total);', 'int panel[6];'));
+    expect(v.status).toBe('fail');
+    expect(v.shown.reasons.join(' ')).toContain('readPanel');
+  });
+  test('4-3-a using < finds the coldest', () => {
+    const { l, p } = find('4-3-a');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['0', '<', 't[i]'] })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['0', '>', 'i'] })).status).toBe('fail');
+  });
+  test('4-3-b best = 0 fails only on the all-negative night', () => {
+    const { l, p } = find('4-3-b');
+    const v = runPuzzle(l, p, wrap('  for (int i = 0; i < 5; i++) {\n    t[i] = readVent();\n  }\n  int best = 0;\n  int bestIndex = 0;\n  for (int i = 0; i < 5; i++) {\n    if (t[i] > best) {\n      best = t[i];\n      bestIndex = i;\n    }\n  }\n  markVent(bestIndex);', 'int t[5];'));
+    expect(v.status).toBe('fail');
+    expect(v.cases.filter((c) => !c.pass).map((c) => c.index)).toEqual([1]);
+  });
+  test('4-3-c integer division loses the decimals', () => {
+    const { l, p } = find('4-3-c');
+    const v = runPuzzle(l, p, wrap('  int total = 0;\n  for (int i = 0; i < 5; i++) {\n    t[i] = readVent();\n    total += t[i];\n  }\n  float avg = total / 5;\n  setCoolant(avg);', 'int t[5];'));
+    expect(v.status).toBe('fail');
+    expect(v.warnings.map((w) => w.kind)).toContain('intDivFloat');
+  });
+  test('4-4-a int(id) instead of String(id) fails; size() is not a String method', () => {
+    const { l, p } = find('4-4-a');
+    const v = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['length', 'charAt', 'int'] }));
+    expect(v.status).toBe('fail');
+    expect(v.warnings.map((w) => w.kind)).toContain('strPlusNum');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['size', 'charAt', 'String'] })).status).not.toBe('pass');
+  });
+  test('4-4-b starter warns about charAt range and string + number', () => {
+    const { l, p } = find('4-4-b');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('fail');
+    expect(v.warnings.map((w) => w.kind)).toEqual(expect.arrayContaining(['strRange', 'strPlusNum']));
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 6: 2, 7: 1 } })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 6: 1, 7: 2 } })).status).toBe('fail');
+  });
+  test('4-4-c a fixed answer fails on the other signals', () => {
+    const { l, p } = find('4-4-c');
+    const v = runPuzzle(l, p, wrap('  String sig = readSignal();\n  int n = sig.length();\n  warn("HUNTERS:3");'));
+    expect(v.status).toBe('fail');
+    expect(v.shown.index).toBe(1);
+  });
+  test('4-5-a counting down locks the vault', () => {
+    const { l, p } = find('4-5-a');
+    const v = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['!=', 'guess--'] }));
+    expect(v.status).toBe('fail');
+    expect(v.shown.reasons.join(' ')).toContain('10');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['==', 'guess++'] })).status).toBe('fail');
+  });
+  test('4-5-b swapping hi and lo locks the vault; linear search runs out of tries', () => {
+    const { l, p } = find('4-5-b');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['2', 'lo', 'hi'] })).status).toBe('fail');
+    const v = runPuzzle(l, p, wrap('  int g = 1;\n  while (tryCode(g) != 0) {\n    g++;\n  }'));
+    expect(v.status).toBe('fail');
+    expect(events(v, 'vault').length).toBeGreaterThan(0);
+  });
+  test('4-5-c binary search never needs more than 10 tries for 1..1000', () => {
+    const { l, p } = find('4-5-c');
+    const v = runPuzzle(l, p, p.kind === 'type' ? p.solution : '');
+    expect(v.status).toBe('pass');
+    for (const c of v.cases) expect(c.result.trace.flatMap((s) => s.events).filter((e) => e.type === 'vault').length).toBeLessThanOrEqual(10);
+  });
+  test('4-6-a any two of the three fixes still fail', () => {
+    const { l, p } = find('4-6-a');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('fail');
+    expect(v.warnings.map((w) => w.kind)).toEqual(expect.arrayContaining(['arrayRange', 'assignInCond']));
+    for (const ln of [9, 10, 15]) {
+      const picks: Record<number, number> = { 9: 1, 10: 1, 15: 1 };
+      picks[ln] = 0;
+      expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks })).status).toBe('fail');
+    }
+  });
+  test('4-6-b int total overflows only on the high set', () => {
+    const { l, p } = find('4-6-b');
+    const v = runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 7: 1 } }));
+    expect(v.status).toBe('fail');
+    expect(v.cases.map((c) => c.pass)).toEqual([false, true]);
+    expect(v.cases[0].result.warnings.map((w) => w.kind)).toContain('overflow');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 3: 1 } })).status).toBe('fail');
+  });
+  test('4-6-c starter is a compile error on line 9, then the logic bugs fail', () => {
+    const { l, p } = find('4-6-c');
+    if (p.kind !== 'type') throw new Error('kind');
+    const v = runPuzzle(l, p, p.starter);
+    expect(v.status).toBe('compile');
+    expect(v.compileError?.kind).toBe('missingSemi');
+    expect(v.compileError?.line).toBe(9);
+    const semi = p.starter.replace('int worstIndex = 0\n', 'int worstIndex = 0;\n');
+    const v2 = runPuzzle(l, p, semi);
+    expect(v2.status).toBe('fail');
+    expect(v2.warnings.map((w) => w.kind)).toContain('arrayRange');
+    expect(runPuzzle(l, p, semi.replace('i <= 5', 'i < 5')).status).toBe('fail');
+  });
+});

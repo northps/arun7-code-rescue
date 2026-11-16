@@ -26,6 +26,7 @@ export interface WorldSpec {
    * แผนที่ห้อง แถวบนสุดคือทิศเหนือ
    * '#' ผนัง  '.' พื้น  ' ' ว่าง  'B' บิต  'D' ประตู  'P' แผ่นเหยียบเปิดประตู
    * 'T' แผงควบคุม  'L' โคมไฟ  'A' ที่ยืนของเคลธ  'X' ลัง  'G' ยานกู้ชีพ  'W' หน้าต่าง  'U' ป้อมปืน
+   * 'S' ชั้นวางอาร์เรย์ (ใช้คู่กับ shelf)
    */
   map: string[];
   dir?: Dir;
@@ -36,6 +37,17 @@ export interface WorldSpec {
   actions?: Record<string, ActionSpec>;
   /** คำสั่งอ่านค่า เช่น scanAliens() → 2 (ใส่ตัวอักษร 1 ตัวได้ เช่น 'F' จะคืนเป็น char) */
   sensors?: Record<string, number | string>;
+  /**
+   * เซนเซอร์ที่อ่านได้ทีละค่าตามลำดับ เช่น { readVent: [72, 85, 64] }: เรียกครั้งแรกได้ 72 ครั้งถัดไปได้ 85 …
+   * เรียกเกินจำนวนค่าที่มี = อ่านเกิน (ตัดสินว่าไม่ผ่าน)
+   */
+  feeds?: Record<string, number[]>;
+  /** ชั้นวางในฉากที่แสดงช่องของอาร์เรย์ชื่อ name: ไฮไลต์ช่องที่โค้ดอ่าน/เขียน และเตือนเมื่ออ่านเกินช่อง */
+  shelf?: { name: string; size: number; values?: number[] };
+  /** คลังรหัส: tryCode(n) คืน 0 = ถูก, 1 = มากไป, -1 = น้อยไป · ลองได้ไม่เกิน tries ครั้ง */
+  vault?: { secret: number; tries: number };
+  /** หน้าตาของฉาก: ไม่ใส่ = ในยาน, 'planet' = ซากสถานีบนดาวเวฬา */
+  theme?: 'planet';
   /** ค่าที่ readNumber() จะได้ ตามลำดับ */
   inputs?: number[];
   /** จำนวนเคลธที่รออยู่หลังประตู (ไม่ใส่ = ค่า scanAliens) */
@@ -81,6 +93,8 @@ export interface Goal {
   clampsLeft?: number;
   /** การจุดเครื่องยนต์แต่ละครั้ง นานกี่วินาที ตามลำดับ (engineOn → delay → engineOff) */
   burns?: number[];
+  /** คลังรหัสต้องเปิดได้ (tryCode ถูกภายในจำนวนครั้งที่กำหนด) */
+  vaultOpen?: boolean;
   /** คำสั่งต้องถูกเรียกกี่ครั้งพอดี */
   calledTimes?: Record<string, number>;
 }
@@ -90,6 +104,8 @@ export interface Case {
   label: string;
   sensors?: Record<string, number | string>;
   inputs?: number[];
+  feeds?: Record<string, number[]>;
+  vault?: { secret: number; tries: number };
   aliens?: number;
   targets?: number;
   shield?: number;
