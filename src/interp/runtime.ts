@@ -585,6 +585,11 @@ export class Runtime {
       case 'delay':
         this.clock += Math.max(0, n(0));
         if (this.cur) this.cur.wait += Math.max(0, n(0));
+        if (this.host.onDelay) {
+          this.ctx.line = this.line;
+          this.host.onDelay(Math.max(0, n(0)), this.ctx);
+          if (this.host.halted) throw new HaltSig();
+        }
         return { t: 'void', v: 0 };
       case 'delayMicroseconds':
         return { t: 'void', v: 0 };

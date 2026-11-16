@@ -27,12 +27,19 @@ import { o03 } from './act4/o03';
 import { o04 } from './act4/o04';
 import { o05 } from './act4/o05';
 import { o06 } from './act4/o06';
+import { p01 } from './act5/p01';
+import { p02 } from './act5/p02';
+import { p03 } from './act5/p03';
+import { p04 } from './act5/p04';
+import { p05 } from './act5/p05';
+import { p06 } from './act5/p06';
 
 export const LEVELS: Level[] = [
   l01, l02, l03, l04, l05, l06, l07, l08, l09,
   m01, m02, m03, m04, m05, m06, m07,
   n01, n02, n03, n04, n05,
   o01, o02, o03, o04, o05, o06,
+  p01, p02, p03, p04, p05, p06,
 ];
 
 /** เนื้อเรื่องทั้ง 7 องก์ องก์ที่ยังไม่มีด่านใน LEVELS จะแสดงเป็นด่านล็อกตามชื่อใน planned */
@@ -70,7 +77,7 @@ export const ACTS: ActInfo[] = [
     title: 'หลบนักล่า',
     blurb: 'นักล่าของเคลธตามลงมา บิตได้ล้อและเซนเซอร์ ต้องขับหลบเอง',
     teaches: 'มอเตอร์ · ฟังก์ชันเดิน/เลี้ยว · เซนเซอร์วัดระยะ · หลบสิ่งกีดขวาง',
-    planned: ['ใส่ล้อให้บิต', 'เลี้ยวให้ได้มุม', 'วิ่งรอบค่าย', 'ตาของบิต', 'หยุดก่อนตกเหว', 'เขาวงกตถ้ำ'],
+    planned: [],
   },
   {
     n: 6,

@@ -46,6 +46,8 @@ export interface Host {
   call(name: string, args: HostValue[], ctx: HostCtx): HostValue | void;
   /** มีค่าเมื่อโลกเกมสั่งให้หยุดรัน (เช่น บิตพัง) */
   halted?: string | null;
+  /** เรียกทุกครั้งที่โปรแกรมสั่ง delay(ms): ให้โลกเกมเดินเวลา (เช่น รถวิ่งต่อ) */
+  onDelay?(ms: number, ctx: HostCtx): void;
   /** ค่าที่ผู้เล่น "พิมพ์" เข้ามาทาง Serial (ใช้กับ readNumber) */
   inputs?: number[];
 }

@@ -70,6 +70,12 @@ export class WorldSim implements Host {
   /** ชื่อเซนเซอร์ที่ถูกอ่านเกินจำนวนค่าที่มี */
   overFeed: string | null = null;
   vaultTries = 0;
+  /** โหมดขับ: ตำแหน่งจริง (หน่วยช่อง) และมุมหัน (องศา ตามเข็มจากทิศเหนือ) */
+  pose = { x: 0, y: 0, th: 0 };
+  motor = { l: 0, r: 0 };
+  crashed = false;
+  flagsLeft = new Set<string>();
+  senseCount = 0;
   vaultOpen = false;
   lockedOut = false;
 
@@ -108,6 +114,12 @@ export class WorldSim implements Host {
       this.fns[name] = { min: 0, max: 0, ret: list.every((x) => Number.isInteger(x)) ? 'int' : 'float' };
     }
     if (spec.vault) this.fns.tryCode = { min: 1, max: 1, ret: 'int' };
+    this.pose = { x: b.x, y: b.y, th: { N: 0, E: 90, S: 180, W: 270 }[this.bot.dir] };
+    if (spec.drive) {
+      this.fns.setMotor = { min: 2, max: 2 };
+      this.fns.readDistance = { min: 0, max: 0, ret: 'int' };
+      for (const f of m.find('F')) this.flagsLeft.add(f.x + ',' + f.y);
+    }
     this.fns.pinMode = { min: 2, max: 2 };
     this.fns.digitalWrite = { min: 2, max: 2 };
     this.fns.digitalRead = { min: 1, max: 1, ret: 'int' };
@@ -124,6 +136,56 @@ export class WorldSim implements Host {
   }
   onPad(): boolean {
     return this.cell(this.bot.x, this.bot.y) === 'P';
+  }
+
+  /** ระยะจริงจากหน้ารถถึงสิ่งกีดขวางตรงหน้า (ซม.) และจุดที่ลำคลื่นชน */
+  frontDistance(): { cm: number; x: number; y: number } {
+    const rad = (this.pose.th * Math.PI) / 180;
+    const sx = Math.sin(rad), sy = -Math.cos(rad);
+    const cm = this.spec.drive?.cm ?? 80;
+    const x0 = this.pose.x + sx * 0.3, y0 = this.pose.y + sy * 0.3;
+    let d = 0;
+    for (let i = 0; i < (400 / cm) * 200; i++) {
+      d = i / 200;
+      if (this.blocked(Math.round(x0 + sx * d), Math.round(y0 + sy * d))) break;
+    }
+    return { cm: Math.min(400, Math.round(d * cm)), x: x0 + sx * d, y: y0 + sy * d };
+  }
+
+  /** โหมดขับ: เดินเวลา ms ให้รถเคลื่อนที่ตามความเร็วล้อ */
+  onDelay(ms: number, ctx: HostCtx): void {
+    if (!this.spec.drive || this.crashed) return;
+    const { l, r } = this.motor;
+    if (l === 0 && r === 0) return;
+    const v = (l + r) / 2 / 150 / 500; // ช่องต่อ ms
+    const w = ((l - r) / 300) * 0.3; // องศาต่อ ms
+    let left = ms;
+    while (left > 0 && !this.crashed) {
+      const dt = Math.min(5, left);
+      left -= dt;
+      this.pose.th += w * dt;
+      const rad = (this.pose.th * Math.PI) / 180;
+      this.pose.x += Math.sin(rad) * v * dt;
+      this.pose.y -= Math.cos(rad) * v * dt;
+      const sg = v >= 0 ? 1 : -1;
+      const fx = Math.round(this.pose.x + Math.sin(rad) * 0.3 * sg), fy = Math.round(this.pose.y - Math.cos(rad) * 0.3 * sg);
+      if (v !== 0 && this.blocked(fx, fy)) {
+        this.crashed = true;
+        this.halted = 'crash';
+      }
+      const key = Math.round(this.pose.x) + ',' + Math.round(this.pose.y);
+      if (this.flagsLeft.delete(key)) {
+        const [gx, gy] = key.split(',').map(Number);
+        ctx.emit({ type: 'flag', x: gx, y: gy, left: this.flagsLeft.size });
+      }
+    }
+    this.pose.x = Math.round(this.pose.x * 1e6) / 1e6;
+    this.pose.y = Math.round(this.pose.y * 1e6) / 1e6;
+    this.pose.th = Math.round(this.pose.th * 1e6) / 1e6;
+    this.bot.x = Math.round(this.pose.x);
+    this.bot.y = Math.round(this.pose.y);
+    ctx.emit({ type: 'drive', x: this.pose.x, y: this.pose.y, th: this.pose.th, ms: ms - left });
+    if (this.crashed) ctx.emit({ type: 'crash' });
   }
 
   targetsLeft(): number {
@@ -265,6 +327,30 @@ export class WorldSim implements Host {
       case 'beginDescent':
         ctx.emit({ type: 'descent' });
         return;
+      case 'setMotor': {
+        const clamp = (v: HostValue) => Math.max(-255, Math.min(255, Math.trunc(Number(v))));
+        if (Math.abs(Number(args[0])) > 255 || Math.abs(Number(args[1])) > 255) {
+          ctx.warn('motorRange', 'ความเร็วของ setMotor ต้องอยู่ระหว่าง -255 ถึง 255 ค่าที่เกินถูกตัดเหลือ 255');
+        }
+        this.motor = { l: clamp(args[0]), r: clamp(args[1]) };
+        ctx.emit({ type: 'motor', l: this.motor.l, r: this.motor.r });
+        // หยุดสนิทบนจุดหมาย = ถึงแล้ว จบการรัน
+        if (this.spec.drive && this.motor.l === 0 && this.motor.r === 0 && this.onPad() && !this.crashed) {
+          this.halted = 'arrived';
+          ctx.emit({ type: 'pad', x: this.bot.x, y: this.bot.y });
+        }
+        return;
+      }
+      case 'readDistance': {
+        if (!this.spec.drive) break;
+        const f = this.frontDistance();
+        const noise = this.spec.drive?.noise;
+        const n = noise && noise.length ? noise[this.senseCount % noise.length] : 0;
+        this.senseCount++;
+        const value = Math.max(0, Math.min(400, f.cm + n));
+        ctx.emit({ type: 'sense', name, value, beam: [f.x, f.y] });
+        return value;
+      }
       case 'tryCode': {
         const v = this.spec.vault!;
         const n = Math.trunc(Number(args[0]));

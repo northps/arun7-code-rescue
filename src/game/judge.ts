@@ -121,6 +121,8 @@ export function specFor(level: Level, p: Puzzle, c?: Case): WorldSpec {
   if (!c) return base;
   return {
     ...base,
+    map: c.map ?? base.map,
+    dir: c.dir ?? base.dir,
     sensors: { ...(base.sensors ?? {}), ...(c.sensors ?? {}) },
     inputs: c.inputs ?? base.inputs,
     feeds: c.feeds ? { ...(base.feeds ?? {}), ...c.feeds } : base.feeds,
@@ -179,6 +181,17 @@ function judge(goal: Goal, sim: WorldSim, res: RunResult): string[] {
     if (missing) out.push(`ยังมีแผงพลังงานที่ไม่ได้เปิดอีก ${missing} ช่อง (ต้องครบ ${g.rows} แถว × ${g.cols} ช่อง)`);
     if (twice) out.push(`มีแผงที่ถูกสั่งเปิดซ้ำ ${twice} ช่อง`);
     if (sim.badCell) out.push(`สั่ง powerCell นอกตาราง: แถวต้องเป็น 0 ถึง ${g.rows - 1} และช่องต้องเป็น 0 ถึง ${g.cols - 1}`);
+  }
+  if (sim.crashed) out.push('บิตชนสิ่งกีดขวาง! ลองดูว่ารถวิ่งนานเกินไป เลี้ยวผิดทาง หรือหยุดช้าไป');
+  if (sim.spec.drive && !sim.crashed) {
+    const on = sim.motor.l !== 0 || sim.motor.r !== 0;
+    if (goal.stopped && on) out.push('จบโปรแกรมแล้วมอเตอร์ยังหมุนอยู่ รถจะวิ่งต่อไปเรื่อย ๆ ต้องสั่งหยุดด้วย setMotor(0, 0);');
+    if (goal.flags && sim.flagsLeft.size) out.push(`ยังไม่ได้ผ่านธงอีก ${sim.flagsLeft.size} จุด`);
+    if (goal.frontCm && !on) {
+      const d = sim.frontDistance().cm;
+      if (d > goal.frontCm[1]) out.push(`รถหยุดห่างจากสิ่งกีดขวาง ${d} ซม. ยังไกลเกินไป (ต้องไม่เกิน ${goal.frontCm[1]} ซม.)`);
+      if (d < goal.frontCm[0]) out.push(`รถหยุดห่างจากสิ่งกีดขวางแค่ ${d} ซม. ใกล้เกินไป (ต้องไม่ต่ำกว่า ${goal.frontCm[0]} ซม.)`);
+    }
   }
   if (sim.overFeed) {
     const n = sim.spec.feeds?.[sim.overFeed]?.length ?? 0;
@@ -254,7 +267,7 @@ export function runPuzzle(level: Level, p: Puzzle, code: string): Verdict {
       return { status: 'compile', compileError: result.compileError, shown: run, cases: [run], warnings: [], code };
     }
     const reasons = judge(goal, sim, result);
-    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped || sim.hostageHit || sim.clampJam || sim.chuteTorn || sim.lockedOut });
+    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped || sim.hostageHit || sim.clampJam || sim.chuteTorn || sim.lockedOut || sim.crashed });
   }
   const firstFail = runs.find((r) => !r.pass && r.drama) ?? runs.find((r) => !r.pass);
   const shown = firstFail ?? runs[0];

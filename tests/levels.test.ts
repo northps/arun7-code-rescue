@@ -345,3 +345,126 @@ describe('องก์ 4: ผลของโค้ดที่ผิด', () => 
     expect(runPuzzle(l, p, semi.replace('i <= 5', 'i < 5')).status).toBe('fail');
   });
 });
+
+describe('องก์ 5: ผลของโค้ดที่ผิด', () => {
+  const find = (id: string) => {
+    for (const l of LEVELS) for (const p of l.puzzles) if (p.id === id) return { l, p };
+    throw new Error(id);
+  };
+  const events = (v: ReturnType<typeof runPuzzle>, type: string) =>
+    v.cases.flatMap((c) => c.result.trace.flatMap((s) => s.events.filter((e) => e.type === type)));
+  const sol = (id: string) => {
+    const { l, p } = find(id);
+    return { l, p, code: buildCode(p, solutionState(p)) };
+  };
+
+  test('5-1-a full speed overshoots and crashes; one wheel only misses the pad; no stop is reported', () => {
+    const { l, p } = find('5-1-a');
+    const fast = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['255', '255', '0'] }));
+    expect(fast.status).toBe('fail');
+    expect(events(fast, 'crash').length).toBe(1);
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['150', '0', '0'] })).status).toBe('fail');
+    const on = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['150', '150', '150'] }));
+    expect(on.status).toBe('fail');
+    expect(on.shown.reasons.join(' ')).toContain('setMotor(0, 0)');
+  });
+  test('5-1-b starter spins in place; missing () is warned', () => {
+    const { l, p } = find('5-1-b');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('fail');
+    expect(v.warnings.map((w) => w.kind)).toContain('callNoParens');
+    for (const ln of [2, 6, 12]) {
+      const picks: Record<number, number> = { 2: 1, 6: 1, 12: 1 };
+      picks[ln] = 0;
+      expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks })).status).not.toBe('pass');
+    }
+  });
+  test('5-1-c raw setMotor without own functions is refused', () => {
+    const { l, p } = find('5-1-c');
+    const v = runPuzzle(l, p, 'void setup() {\n  setMotor(150, 150);\n  delay(1500);\n  setMotor(-150, -150);\n  delay(1000);\n  setMotor(0, 0);\n}\nvoid loop() {\n}');
+    expect(v.status).toBe('fail');
+    expect(v.shown.reasons.join(' ')).toContain('forward');
+  });
+  test('5-2-a turning for 1000 ms or the wrong way fails', () => {
+    const { l, p } = find('5-2-a');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['-150', '1000'] })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['150', 'TURN_MS'] })).status).toBe('fail');
+  });
+  test('5-2-b each fix alone still fails', () => {
+    const { l, p } = find('5-2-b');
+    expect(runPuzzle(l, p, buildCode(p, initialState(p))).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 1: 1 } })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 12: 1 } })).status).toBe('fail');
+  });
+  test('5-3-a every wrong order fails', () => {
+    const { l, p } = find('5-3-a');
+    for (const order of [[2, 1, 0], [1, 0, 2], [0, 2, 1], [2, 0, 1], [1, 2, 0]]) {
+      expect(runPuzzle(l, p, buildCode(p, { kind: 'order', order })).status).toBe('fail');
+    }
+  });
+  test('5-3-b square loop on the rectangle misses flags; unrolled code without a loop is refused', () => {
+    const { l, p, code } = sol('5-3-b');
+    const sq = runPuzzle(l, p, code.replace('delay(2000);', 'delay(1000);'));
+    expect(sq.status).toBe('fail');
+    const flat = code.replace(/for \(int i = 0; i < 2; i\+\+\) \{([\s\S]*?)\n  \}/, (_m, body) => body + body);
+    expect(flat).not.toMatch(/for/);
+    const v = runPuzzle(l, p, flat);
+    expect(v.status).toBe('fail');
+    expect(v.cases[0].pass).toBe(true);
+  });
+  test('5-4-a println for the number breaks the line', () => {
+    const { l, p } = find('5-4-a');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['readDistance', 'println', 'println'] })).status).toBe('fail');
+  });
+  test('5-4-b each fix alone gives a wrong average', () => {
+    const { l, p } = find('5-4-b');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 5: 1 } })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 8: 1 } })).status).toBe('fail');
+  });
+  test('5-4-c a single noisy reading is not the average', () => {
+    const { l, p } = find('5-4-c');
+    const v = runPuzzle(l, p, 'int readAverage() {\n  return readDistance();\n}\nvoid setup() {\n  Serial.begin(9600);\n  int d = readAverage();\n  Serial.println(d);\n  if (d < 100) {\n    Serial.println("NEAR");\n  } else {\n    Serial.println("FAR");\n  }\n}\nvoid loop() {\n}');
+    expect(v.status).toBe('fail');
+  });
+  test('5-5-a wrong comparison never moves; swapped actions never move either', () => {
+    const { l, p } = find('5-5-a');
+    const v = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['>', 'stopCar', 'forward'] }));
+    expect(v.status).toBe('fail');
+    expect(v.shown.reasons.join(' ')).toContain('ไกลเกินไป');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['<', 'forward', 'stopCar'] })).status).toBe('fail');
+  });
+  test('5-5-b long delay crashes; tiny DANGER_CM stops too late', () => {
+    const { l, p } = find('5-5-b');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('fail');
+    expect(events(v, 'crash').length).toBeGreaterThan(0);
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 1: 1 } })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 21: 1 } })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 1: 1, 21: 2 } })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 1: 2, 21: 1 } })).status).toBe('fail');
+  });
+  test('5-5-c a timed run without the sensor fails on the other corridors', () => {
+    const { l, p, code } = sol('5-5-c');
+    const timed = code.replace(/void setup\(\) \{\n\}/, 'void setup() {\n  forward();\n  delay(1450);\n  stopCar();\n}').replace(/void loop\(\) \{[\s\S]*$/, 'void loop() {\n}');
+    expect(runPuzzle(l, p, timed).status).toBe('fail');
+  });
+  test('5-6 both caves are solved, and each needs both a left and a right choice', () => {
+    const { l, p, code } = sol('5-6-b');
+    const v = runPuzzle(l, p, code);
+    expect(v.status).toBe('pass');
+    for (const c of v.cases) expect(c.result.loopsRun).toBeLessThan(60);
+  });
+  test('5-6-a wrong comparison or wrong turn fails', () => {
+    const { l, p } = find('5-6-a');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['<', 'turnLeft', 'turnLeft'] })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['>', 'turnLeft', 'turnRight'] })).status).toBe('fail');
+    // หมุนขวา 2 ครั้งก็หันไปทางซ้ายได้เหมือนกัน (180 องศา) จึงนับว่าถูก
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['>', 'turnRight', 'turnRight'] })).status).toBe('pass');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['>', 'forward', 'forward'] })).status).toBe('fail');
+  });
+  test('5-6-b always turning right fails in one of the caves', () => {
+    const { l, p, code } = sol('5-6-b');
+    const v = runPuzzle(l, p, code.replace(/    if \(left > right\) \{\n      turnLeft\(\);\n      turnLeft\(\);\n    \}\n/, ''));
+    expect(v.status).toBe('fail');
+  });
+});

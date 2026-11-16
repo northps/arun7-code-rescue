@@ -587,13 +587,14 @@ export class PlayScreen {
     await sleep(250);
 
     const trace = run.result.trace;
-    const limit = trace.length > 140 ? 45 : trace.length;
+    const driving = !!run.spec.drive;
+    const limit = !driving && trace.length > 140 ? 45 : trace.length;
     let serial = '';
     for (let i = 0; i < limit; i++) {
       if (id !== this.playId) return;
       const step = trace[i];
       this.setCur(step.line);
-      sfx.step();
+      if (!(driving && trace.length > 60)) sfx.step();
       for (const ev of step.events) {
         const d = this.view.apply(ev);
         if (d) await sleep(d * (ev.type === 'rush' ? 1 : speed()));
@@ -604,7 +605,8 @@ export class PlayScreen {
         this.view.apply({ type: 'serial', text: serial.replace(/\n$/, '') });
       }
       this.setOverlays(step.vars, serial);
-      await sleep((limit < trace.length ? 60 : 360) * speed() + Math.min(step.wait * 0.5, 2000) * speed());
+      const pause = limit < trace.length ? 60 : driving ? (trace.length > 60 ? 24 : 180) : 360;
+      await sleep(pause * speed() + Math.min(step.wait * 0.5, 2000) * speed());
     }
     if (id !== this.playId) return;
     this.setRun(false);

@@ -26,7 +26,7 @@ export interface WorldSpec {
    * แผนที่ห้อง แถวบนสุดคือทิศเหนือ
    * '#' ผนัง  '.' พื้น  ' ' ว่าง  'B' บิต  'D' ประตู  'P' แผ่นเหยียบเปิดประตู
    * 'T' แผงควบคุม  'L' โคมไฟ  'A' ที่ยืนของเคลธ  'X' ลัง  'G' ยานกู้ชีพ  'W' หน้าต่าง  'U' ป้อมปืน
-   * 'S' ชั้นวางอาร์เรย์ (ใช้คู่กับ shelf)
+   * 'S' ชั้นวางอาร์เรย์ (ใช้คู่กับ shelf)  'F' ธงจุดตรวจ (ใช้กับ drive)
    */
   map: string[];
   dir?: Dir;
@@ -46,6 +46,12 @@ export interface WorldSpec {
   shelf?: { name: string; size: number; values?: number[] };
   /** คลังรหัส: tryCode(n) คืน 0 = ถูก, 1 = มากไป, -1 = น้อยไป · ลองได้ไม่เกิน tries ครั้ง */
   vault?: { secret: number; tries: number };
+  /**
+   * โหมดขับด้วยมอเตอร์ (องก์ 5): เปิดคำสั่ง setMotor(ซ้าย, ขวา) ค่า -255 ถึง 255 และ readDistance() (ซม.)
+   * รถเคลื่อนที่ระหว่าง delay: ความเร็ว 150 ทั้งสองล้อ = 1 ช่องต่อ 500 ms · setMotor(150, -150) = หมุนขวา 90° ใน 300 ms
+   * cm = ความกว้างของ 1 ช่องเป็นเซนติเมตร (ปกติ 80) · noise = ค่าที่บวกเข้ากับ readDistance() แต่ละครั้ง ตามลำดับ
+   */
+  drive?: { cm?: number; noise?: number[] };
   /** หน้าตาของฉาก: ไม่ใส่ = ในยาน, 'planet' = ซากสถานีบนดาวเวฬา */
   theme?: 'planet';
   /** ค่าที่ readNumber() จะได้ ตามลำดับ */
@@ -93,6 +99,12 @@ export interface Goal {
   clampsLeft?: number;
   /** การจุดเครื่องยนต์แต่ละครั้ง นานกี่วินาที ตามลำดับ (engineOn → delay → engineOff) */
   burns?: number[];
+  /** โหมดขับ: จบโปรแกรมแล้วมอเตอร์ต้องหยุด */
+  stopped?: boolean;
+  /** โหมดขับ: ต้องผ่านธง 'F' ครบทุกจุด */
+  flags?: boolean;
+  /** โหมดขับ: ตอนจบ ระยะจากหน้ารถถึงสิ่งกีดขวางต้องอยู่ในช่วง [ต่ำสุด, สูงสุด] ซม. */
+  frontCm?: [number, number];
   /** คลังรหัสต้องเปิดได้ (tryCode ถูกภายในจำนวนครั้งที่กำหนด) */
   vaultOpen?: boolean;
   /** คำสั่งต้องถูกเรียกกี่ครั้งพอดี */
@@ -102,6 +114,9 @@ export interface Goal {
 /** กรณีทดสอบ: ค่าเซนเซอร์/ค่าที่รับเข้ามาต่างกัน เป้าหมายต่างกัน */
 export interface Case {
   label: string;
+  /** แผนที่ของกรณีนี้ (ไม่ใส่ = แผนที่ของด่าน) */
+  map?: string[];
+  dir?: Dir;
   sensors?: Record<string, number | string>;
   inputs?: number[];
   feeds?: Record<string, number[]>;

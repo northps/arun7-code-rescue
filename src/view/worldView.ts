@@ -100,6 +100,11 @@ export class WorldView {
     ghost: THREE.Mesh;
   } | null = null;
   spaceBody: THREE.Object3D[] = [];
+  /** ธงจุดตรวจของโหมดขับ (องก์ 5) */
+  flags: { key: string; mat: THREE.MeshStandardMaterial }[] = [];
+  beam: THREE.Mesh | null = null;
+  lastSenseLabel = 0;
+  motorsOn = false;
   calm = false;
   hemi = new THREE.HemisphereLight(0x8fb4ff, 0x0c1018, 0.75);
   key = new THREE.DirectionalLight(0xfff4e6, 2.6);
@@ -276,6 +281,8 @@ export class WorldView {
     this.crew = null;
     this.shieldMesh = null;
     this.shelf = null;
+    this.flags = [];
+    this.beam = null;
     this.doorL = this.doorR = null;
     this.mood = 'idle';
     for (const p of this.particles) this.scene.remove(p.m);
@@ -351,8 +358,24 @@ export class WorldView {
           this.buildLamp(p);
           break;
         case 'X':
-          this.buildCrate(p, c.x + c.y);
+          if (planet) this.buildBoulder(p, c.x * 7 + c.y * 13);
+          else this.buildCrate(p, c.x + c.y);
           break;
+        case 'F': {
+          const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.9, 6), std(0xdfe8f5, { metalness: 0.6, roughness: 0.4 }));
+          pole.position.set(p.x + 0.32, 0.48, p.z - 0.32);
+          this.root.add(pole);
+          const mat = glow(C.amber, 1.8);
+          const cloth = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.2, 0.02), mat);
+          cloth.position.set(p.x + 0.16, 0.8, p.z - 0.32);
+          this.root.add(cloth);
+          const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.02, 6, 32), mat);
+          ring.rotation.x = Math.PI / 2;
+          ring.position.set(p.x, 0.05, p.z);
+          this.root.add(ring);
+          this.flags.push({ key: c.x + ',' + c.y, mat });
+          break;
+        }
         case 'A':
           this.buildAlien(p);
           break;
@@ -437,6 +460,21 @@ export class WorldView {
       else moss.position.set(((rnd() < 0.5 ? -1 : 1) * (w - 1)) / 2, 1.29, (rnd() - 0.5) * (h - 2));
       this.root.add(moss);
     }
+  }
+
+  private buildBoulder(p: THREE.Vector3, seed: number): void {
+    const s = 0.34 + (seed % 5) * 0.025;
+    const rock = new THREE.Mesh(new THREE.DodecahedronGeometry(s, 0), std(0x4a5a57, { metalness: 0.1, roughness: 0.95 }));
+    rock.position.set(p.x, s * 0.8, p.z);
+    rock.rotation.set(seed * 0.7, seed * 1.3, seed * 0.4);
+    rock.scale.y = 0.85;
+    rock.castShadow = true;
+    rock.receiveShadow = true;
+    this.root.add(rock);
+    const shard = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.35, 5), glow(seed % 2 ? 0x35e0ff : 0x7dffb8, 1.4));
+    shard.position.set(p.x + 0.22, 0.2, p.z + 0.2);
+    shard.rotation.z = -0.3;
+    this.root.add(shard);
   }
 
   /** ชั้นวางอาร์เรย์: ช่องเรียงซ้ายไปขวา index 0 อยู่ซ้ายสุด */
@@ -1039,6 +1077,9 @@ export class WorldView {
       fx.chute.position.set(0, 0, 0);
       for (const l of fx.legs) l.visible = false;
     }
+    for (const f of this.flags) f.mat.emissive.setHex(C.amber);
+    if (this.beam) this.beam.visible = false;
+    this.motorsOn = false;
     if (this.shelf) {
       const vals = spec.shelf?.values;
       this.shelf.ghost.visible = false;
@@ -1189,7 +1230,87 @@ export class WorldView {
       case 'alarm':
         this.flash('red');
         return 300;
+      case 'drive': {
+        const from = this.bot.position.clone();
+        const to = this.cellPos(ev.x as number, ev.y as number);
+        const r0 = this.bot.rotation.y;
+        const r1 = Math.PI - ((ev.th as number) * Math.PI) / 180;
+        let d = r1 - r0;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        const dur = Math.max(40, Math.min((ev.ms as number) * 0.5, 2000));
+        this.moving++;
+        this.tween(
+          dur,
+          (k) => {
+            this.bot.position.lerpVectors(from, to, k);
+            this.bot.rotation.y = r0 + d * k;
+          },
+          () => this.moving--,
+        );
+        return 0;
+      }
+      case 'crash': {
+        this.burst(this.bot.position.clone().setY(0.5), C.amber, 22);
+        this.floatText('ชน!', this.bot.position.clone().setY(1.45), '#ffb020');
+        this.setMood('fail');
+        this.flash('red');
+        return 600;
+      }
+      case 'flag': {
+        const f = this.flags.find((x) => x.key === ev.x + ',' + ev.y);
+        if (f) f.mat.emissive.setHex(C.green);
+        this.burst(this.cellPos(ev.x as number, ev.y as number).setY(0.6), C.green, 10);
+        return 0;
+      }
+      case 'motor': {
+        const on = ev.l !== 0 || ev.r !== 0;
+        if (on !== this.motorsOn) {
+          this.motorsOn = on;
+          const now = this.clock.elapsedTime;
+          if (now - this.lastSenseLabel > 0.5) {
+            this.lastSenseLabel = now;
+            this.floatText(on ? `setMotor(${ev.l}, ${ev.r})` : 'หยุด', this.bot.position.clone().setY(1.5), on ? '#7fe9ff' : '#ffd166');
+            return 120;
+          }
+        }
+        return 0;
+      }
       case 'sense':
+        if (ev.beam) {
+          const hit = this.cellPos((ev.beam as number[])[0], (ev.beam as number[])[1]).setY(0.55);
+          const start = this.bot.position.clone().setY(0.55);
+          const len = Math.max(0.05, start.distanceTo(hit));
+          if (!this.beam) {
+            this.beam = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.025, 0.025, 1, 6),
+              new THREE.MeshBasicMaterial({ color: 0x35e0ff, transparent: true, opacity: 0.8, depthWrite: false }),
+            );
+            this.root.add(this.beam);
+          }
+          const beam = this.beam;
+          beam.visible = true;
+          beam.scale.set(1, len, 1);
+          beam.position.copy(start).lerp(hit, 0.5);
+          beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), hit.clone().sub(start).normalize());
+          const mat = beam.material as THREE.MeshBasicMaterial;
+          this.tween(
+            260,
+            (k) => {
+              mat.opacity = 0.85 * (1 - k);
+            },
+            () => {
+              beam.visible = false;
+            },
+          );
+          const now = this.clock.elapsedTime;
+          if (now - this.lastSenseLabel > 0.7) {
+            this.lastSenseLabel = now;
+            this.floatText(`${ev.value} ซม.`, this.bot.position.clone().setY(1.5), '#7fe9ff');
+            return 160;
+          }
+          return 0;
+        }
         if (ev.over) {
           this.flash('red');
           this.floatText(`${ev.name}() ไม่มีค่าให้อ่านแล้ว!`, this.bot.position.clone().setY(1.5), '#ff5566');
