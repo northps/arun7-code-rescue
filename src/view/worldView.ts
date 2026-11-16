@@ -77,6 +77,10 @@ export class WorldView {
   panel: { tex: THREE.CanvasTexture; ctx: CanvasRenderingContext2D; pos: THREE.Vector3 } | null = null;
   trims: THREE.MeshStandardMaterial[] = [];
   pod: THREE.Group | null = null;
+  turret: { head: THREE.Object3D; pos: THREE.Vector3 } | null = null;
+  crew: THREE.Group | null = null;
+  shieldMesh: THREE.Mesh | null = null;
+  cellGroup = new THREE.Group();
   hemi = new THREE.HemisphereLight(0x8fb4ff, 0x0c1018, 0.75);
   key = new THREE.DirectionalLight(0xfff4e6, 2.6);
   alarm = new THREE.PointLight(C.red, 0, 14, 1.6);
@@ -245,6 +249,9 @@ export class WorldView {
     this.trims = [];
     this.panel = null;
     this.pod = null;
+    this.turret = null;
+    this.crew = null;
+    this.shieldMesh = null;
     this.doorL = this.doorR = null;
     this.mood = 'idle';
     for (const p of this.particles) this.scene.remove(p.m);
@@ -324,8 +331,12 @@ export class WorldView {
         case 'G':
           this.buildPod(p);
           break;
+        case 'U':
+          this.buildTurret(p);
+          break;
       }
     }
+    this.buildExtras(spec);
     // บิต
     this.bot = this.buildBot();
     this.root.add(this.bot);
@@ -509,6 +520,104 @@ export class WorldView {
     this.alienHome.push(p.clone());
   }
 
+  /** ตำแหน่งเป้ายิง: 'k' เคลธ, 'h' ตัวประกัน, '' ว่าง (กติกาเดียวกับ WorldSim) */
+  private slotsOf(spec: WorldSpec): string[] {
+    const out: string[] = [];
+    let left = spec.targets ?? 0;
+    for (let i = 0; i < this.alienHome.length; i++) {
+      if (spec.hostage === i + 1) out.push('h');
+      else if (left > 0) {
+        out.push('k');
+        left--;
+      } else out.push('');
+    }
+    return out;
+  }
+
+  private buildTurret(p: THREE.Vector3): void {
+    const metal = std(0x3b4a66, { metalness: 0.8, roughness: 0.3 });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.38, 0.3, 16), metal);
+    base.position.set(p.x, 0.18, p.z);
+    base.castShadow = true;
+    this.root.add(base);
+    const head = new THREE.Group();
+    const body = new THREE.Mesh(new RoundedBoxGeometry(0.42, 0.3, 0.5, 3, 0.07), std(0xc3ccd8, { metalness: 0.4, roughness: 0.35 }));
+    body.castShadow = true;
+    head.add(body);
+    for (const sx of [-0.1, 0.1]) {
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.6, 10), metal);
+      barrel.rotation.x = Math.PI / 2;
+      barrel.position.set(sx, 0.02, -0.5);
+      head.add(barrel);
+      const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.05, 10), glow(C.orange, 2.5));
+      tip.rotation.x = Math.PI / 2;
+      tip.position.set(sx, 0.02, -0.8);
+      head.add(tip);
+    }
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.02), glow(C.cyan, 2.5));
+    eye.position.set(0, 0.08, -0.255);
+    head.add(eye);
+    head.position.set(p.x, 0.55, p.z);
+    this.root.add(head);
+    this.turret = { head, pos: new THREE.Vector3(p.x, 0.57, p.z) };
+  }
+
+  /** ของที่ขึ้นกับกรณีทดสอบ: ตัวประกัน โล่ของหัวหน้าเคลธ และแผงพลังงาน */
+  private buildExtras(spec: WorldSpec): void {
+    this.cellGroup = new THREE.Group();
+    this.root.add(this.cellGroup);
+    const slots = this.slotsOf(spec);
+    const h = slots.indexOf('h');
+    if (h >= 0) {
+      const g = new THREE.Group();
+      const suit = std(0x2aa6c9, { metalness: 0.2, roughness: 0.6 });
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, 0.36, 6, 12), suit);
+      body.position.y = 0.45;
+      body.castShadow = true;
+      g.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.15, 16, 12), std(0xe8b98f, { metalness: 0, roughness: 0.8 }));
+      head.position.y = 0.92;
+      g.add(head);
+      const band = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.03, 8, 20), glow(C.amber, 2));
+      band.rotation.x = Math.PI / 2;
+      band.position.y = 0.5;
+      g.add(band);
+      for (const sx of [-0.24, 0.24]) {
+        const arm = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, 0.26, 4, 8), suit);
+        arm.position.set(sx, 0.86, 0);
+        arm.rotation.z = sx > 0 ? -0.35 : 0.35;
+        g.add(arm);
+      }
+      g.position.copy(this.alienHome[h]);
+      this.root.add(g);
+      this.crew = g;
+    }
+    if (spec.shield !== undefined) {
+      const k = slots.indexOf('k');
+      if (k >= 0) {
+        const sh = new THREE.Mesh(
+          new THREE.SphereGeometry(0.62, 24, 16),
+          new THREE.MeshStandardMaterial({ color: 0x220033, emissive: C.klethGlow, emissiveIntensity: 1.2, transparent: true, opacity: 0.28, roughness: 0.1, depthWrite: false }),
+        );
+        sh.position.copy(this.alienHome[k]).setY(0.7);
+        this.root.add(sh);
+        this.shieldMesh = sh;
+        this.aliens[k].scale.setScalar(1.25);
+      }
+    }
+    if (spec.grid) {
+      const frame = glow(C.amber, 0.9);
+      for (let r = 0; r < spec.grid.rows; r++) for (let c = 0; c < spec.grid.cols; c++) {
+        const p = this.cellPos(spec.grid.origin[0] + c, spec.grid.origin[1] + r);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.018, 6, 4), frame);
+        ring.rotation.x = Math.PI / 2;
+        ring.rotation.z = Math.PI / 4;
+        ring.position.set(p.x, 0.05, p.z);
+        this.root.add(ring);
+      }
+    }
+  }
+
   private buildPod(p: THREE.Vector3): void {
     const g = new THREE.Group();
     if (this.models.pod) {
@@ -629,12 +738,17 @@ export class WorldView {
     this.bot.scale.setScalar(1.2);
     this.setMood('idle');
     this.setDoor('closed', true);
-    const count = spec.aliens ?? spec.sensors?.scanAliens ?? 0;
+    const count = spec.aliens ?? (typeof spec.sensors?.scanAliens === 'number' ? spec.sensors.scanAliens : 0);
+    const slots = spec.targets !== undefined ? this.slotsOf(spec) : null;
     this.aliens.forEach((a, i) => {
-      a.visible = i < count;
+      a.visible = slots ? slots[i] === 'k' : i < count;
       a.position.copy(this.alienHome[i]);
       a.rotation.set(0, 0, 0);
+      a.scale.setScalar(this.shieldMesh && slots && slots.indexOf('k') === i ? 1.25 : 1);
     });
+    if (this.shieldMesh) this.shieldMesh.visible = true;
+    this.cellGroup.clear();
+    if (this.turret) this.turret.head.rotation.y = 0;
     for (const l of this.lamps) {
       l.bulb.emissiveIntensity = 0;
       l.light.intensity = 0;
@@ -805,6 +919,82 @@ export class WorldView {
         this.setMood('fail');
         this.flash('red');
         return 1300;
+      }
+      case 'aim': {
+        if (!this.turret) return 0;
+        const head = this.turret.head;
+        const r0 = head.rotation.y;
+        const r1 = ev.dir === 'aimLeft' ? 0.75 : ev.dir === 'aimRight' ? -0.75 : 0;
+        this.tween(300, (k) => {
+          head.rotation.y = r0 + (r1 - r0) * ease(k);
+        });
+        this.floatText(`${ev.dir}()`, this.turret.pos.clone().setY(1.35), '#7fe9ff');
+        return 420;
+      }
+      case 'fire': {
+        const idx = ev.index as number;
+        const from = this.turret ? this.turret.pos.clone() : this.bot.position.clone().setY(0.8);
+        const to = idx >= 0 && this.alienHome[idx] ? this.alienHome[idx].clone().setY(0.7) : from.clone().add(new THREE.Vector3(0, 0.2, -6));
+        if (this.turret) this.turret.head.rotation.y = Math.atan2(-(to.x - from.x), -(to.z - from.z));
+        const dir = to.clone().sub(from);
+        const len = dir.length();
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, len, 8), glow(ev.miss ? C.amber : C.orange, 6));
+        beam.position.copy(from).addScaledVector(dir, 0.5);
+        beam.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+        this.scene.add(beam);
+        this.tween(170, () => undefined, () => this.scene.remove(beam));
+        if (ev.hostage) {
+          this.burst(to, C.red, 20);
+          this.floatText('ยิงโดนลูกเรือ!', to.clone().setY(1.5), '#ff5566');
+          this.flash('red');
+          this.setMood('fail');
+        } else if (ev.miss) {
+          this.burst(to, C.amber, 6);
+          this.floatText('พลาด!', to.clone().setY(1.4), '#ffb020');
+        } else if (ev.kill) {
+          const a = this.aliens[idx];
+          this.burst(to, C.klethGlow, 22);
+          if (this.shieldMesh) this.shieldMesh.visible = false;
+          if (a) {
+            const s0 = a.scale.x;
+            this.tween(
+              280,
+              (k) => {
+                a.scale.setScalar(s0 * (1 - ease(k)) + 0.001);
+              },
+              () => {
+                a.visible = false;
+              },
+            );
+          }
+        } else {
+          this.burst(to, C.klethGlow, 8);
+          this.floatText(`โล่เหลือ ${ev.shield}`, to.clone().setY(1.6), '#e08bff');
+          const sh = this.shieldMesh;
+          if (sh) {
+            const m = sh.material as THREE.MeshStandardMaterial;
+            this.tween(260, (k) => {
+              m.opacity = 0.28 + Math.sin(k * Math.PI) * 0.5;
+            });
+          }
+        }
+        return 460;
+      }
+      case 'cell': {
+        const g = this.spec?.grid;
+        if (!g) return 0;
+        if (!ev.ok) {
+          this.floatText('นอกตาราง!', this.bot.position.clone().setY(1.5), '#ff5566');
+          return 400;
+        }
+        const p = this.cellPos(g.origin[0] + (ev.c as number), g.origin[1] + (ev.r as number));
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.05, 0.8), glow(ev.again ? C.amber : C.green, 1.6));
+        plate.position.set(p.x, 0.06 + (ev.again ? 0.05 : 0), p.z);
+        this.cellGroup.add(plate);
+        this.tween(200, (k) => {
+          plate.scale.set(0.4 + 0.6 * k, 1, 0.4 + 0.6 * k);
+        });
+        return 170;
       }
       default:
         return 0;

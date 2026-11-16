@@ -17,13 +17,14 @@ export type PinDevice = 'lamp' | 'lock';
 
 export type ApiName =
   | 'forward' | 'backward' | 'turnLeft' | 'turnRight'
-  | 'openDoor' | 'closeDoor' | 'lockDoor';
+  | 'openDoor' | 'closeDoor' | 'lockDoor'
+  | 'fire' | 'fireAt' | 'aimLeft' | 'aimRight' | 'standby' | 'powerCell';
 
 export interface WorldSpec {
   /**
    * แผนที่ห้อง แถวบนสุดคือทิศเหนือ
    * '#' ผนัง  '.' พื้น  ' ' ว่าง  'B' บิต  'D' ประตู  'P' แผ่นเหยียบเปิดประตู
-   * 'T' แผงควบคุม  'L' โคมไฟ  'A' ที่ยืนของเคลธ  'X' ลัง  'G' ยานกู้ชีพ  'W' หน้าต่าง
+   * 'T' แผงควบคุม  'L' โคมไฟ  'A' ที่ยืนของเคลธ  'X' ลัง  'G' ยานกู้ชีพ  'W' หน้าต่าง  'U' ป้อมปืน
    */
   map: string[];
   dir?: Dir;
@@ -32,12 +33,20 @@ export interface WorldSpec {
   /** อุปกรณ์ที่ต่อกับขาของบอร์ด */
   pins?: Record<number, PinDevice>;
   actions?: Record<string, ActionSpec>;
-  /** คำสั่งอ่านค่า เช่น scanAliens() → 2 */
-  sensors?: Record<string, number>;
+  /** คำสั่งอ่านค่า เช่น scanAliens() → 2 (ใส่ตัวอักษร 1 ตัวได้ เช่น 'F' จะคืนเป็น char) */
+  sensors?: Record<string, number | string>;
   /** ค่าที่ readNumber() จะได้ ตามลำดับ */
   inputs?: number[];
   /** จำนวนเคลธที่รออยู่หลังประตู (ไม่ใส่ = ค่า scanAliens) */
   aliens?: number;
+  /** จำนวนเคลธที่เป็นเป้ายิง ยืนที่ 'A' เรียงจากซ้าย (ตำแหน่ง 1, 2, 3 …) */
+  targets?: number;
+  /** โล่ของหัวหน้าเคลธ: ต้องยิงกี่นัดจึงแตก (readShield() อ่านค่าที่เหลือ) */
+  shield?: number;
+  /** ตำแหน่ง (เริ่มที่ 1) ของลูกเรือที่ถูกจับ ห้ามยิงโดน */
+  hostage?: number;
+  /** ตารางแผงพลังงานสำหรับ powerCell(แถว, ช่อง): origin = ช่องบนซ้ายในแผนที่ */
+  grid?: { rows: number; cols: number; origin: [number, number] };
   /** จำนวนรอบของ loop() */
   loops?: number;
   /** ห้องมืดจนกว่าจะเปิดโคมไฟ */
@@ -58,14 +67,21 @@ export interface Goal {
   notCalled?: string[];
   /** เวลารอรวมอย่างน้อย (ms) */
   minDelay?: number;
+  /** เคลธเป้ายิงต้องเหลือกี่ตัว (ปกติ 0) และห้ามยิงเกิน */
+  targetsLeft?: number;
+  /** ต้องเปิดแผงพลังงานครบทุกช่อง ช่องละครั้ง */
+  gridFull?: boolean;
 }
 
 /** กรณีทดสอบ: ค่าเซนเซอร์/ค่าที่รับเข้ามาต่างกัน เป้าหมายต่างกัน */
 export interface Case {
   label: string;
-  sensors?: Record<string, number>;
+  sensors?: Record<string, number | string>;
   inputs?: number[];
   aliens?: number;
+  targets?: number;
+  shield?: number;
+  hostage?: number;
   goal?: Goal;
 }
 

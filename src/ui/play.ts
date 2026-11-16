@@ -724,7 +724,7 @@ export class PlayScreen {
         h('button', { class: 'btn ghost', onclick: () => this.nav.toMap() }, 'แผนที่ด่าน'),
         hasNext
           ? h('button', { class: 'btn run', onclick: () => this.nav.next(L) }, 'ด่านต่อไป ▶')
-          : h('button', { class: 'btn run', onclick: () => this.nav.toMap() }, 'จบองก์ 1 ▶'),
+          : h('button', { class: 'btn run', onclick: () => this.nav.toMap() }, `จบองก์ ${L.act} ▶`),
       ),
     );
   }

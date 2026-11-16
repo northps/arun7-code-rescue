@@ -9,8 +9,18 @@ import { l06 } from './act1/l06';
 import { l07 } from './act1/l07';
 import { l08 } from './act1/l08';
 import { l09 } from './act1/l09';
+import { m01 } from './act2/m01';
+import { m02 } from './act2/m02';
+import { m03 } from './act2/m03';
+import { m04 } from './act2/m04';
+import { m05 } from './act2/m05';
+import { m06 } from './act2/m06';
+import { m07 } from './act2/m07';
 
-export const LEVELS: Level[] = [l01, l02, l03, l04, l05, l06, l07, l08, l09];
+export const LEVELS: Level[] = [
+  l01, l02, l03, l04, l05, l06, l07, l08, l09,
+  m01, m02, m03, m04, m05, m06, m07,
+];
 
 /** เนื้อเรื่องทั้ง 7 องก์ องก์ที่ยังไม่มีด่านใน LEVELS จะแสดงเป็นด่านล็อกตามชื่อใน planned */
 export const ACTS: ActInfo[] = [
@@ -26,7 +36,7 @@ export const ACTS: ActInfo[] = [
     title: 'สู้กลับ',
     blurb: 'ยานกู้ชีพถูกล้อม เปิดป้อมปืนและโดรนของยานขึ้นมาสู้',
     teaches: 'switch / case · for · while · do…while · break · continue',
-    planned: ['แผงควบคุมป้อมปืน', 'ลืม break', 'ยิงห้านัด', 'นับถอยหลัง', 'จนกว่าโล่จะแตก', 'ถามจนกว่าจะถูก', 'กวาดทั้งโถง'],
+    planned: [],
   },
   {
     n: 3,

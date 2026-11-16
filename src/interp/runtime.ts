@@ -223,7 +223,7 @@ export class Runtime {
   }
   fromHost(raw: HostValue | void, ret?: VType): Val {
     if (raw === undefined || ret === 'void') return { t: 'void', v: 0 };
-    if (typeof raw === 'string') return { t: 'String', v: raw };
+    if (typeof raw === 'string') return ret === 'char' && raw.length === 1 ? { t: 'char', v: raw.charCodeAt(0) } : { t: 'String', v: raw };
     if (typeof raw === 'boolean') return { t: 'bool', v: raw };
     if (ret) return this.coerce({ t: Number.isInteger(raw) ? 'long' : 'float', v: raw }, ret, true);
     if (Number.isInteger(raw)) return { t: Math.abs(raw) > 32767 ? 'long' : 'int', v: raw };

@@ -123,7 +123,10 @@ export function specFor(level: Level, p: Puzzle, c?: Case): WorldSpec {
     ...base,
     sensors: { ...(base.sensors ?? {}), ...(c.sensors ?? {}) },
     inputs: c.inputs ?? base.inputs,
-    aliens: c.aliens ?? (c.sensors?.scanAliens !== undefined ? c.sensors.scanAliens : base.aliens),
+    aliens: c.aliens ?? (typeof c.sensors?.scanAliens === 'number' ? c.sensors.scanAliens : base.aliens),
+    targets: c.targets ?? base.targets,
+    shield: c.shield ?? base.shield,
+    hostage: c.hostage ?? base.hostage,
   };
 }
 
@@ -136,6 +139,24 @@ function judge(goal: Goal, sim: WorldSim, res: RunResult): string[] {
   if (res.runtimeError) out.push(res.runtimeError.th);
   if (sim.bumped) out.push('บิตเดินชนสิ่งกีดขวาง โปรแกรมจึงหยุด ลองนับช่องและทิศที่หันอีกครั้ง');
   if (sim.caught) out.push('ประตูเปิดทั้งที่มีเคลธรออยู่ข้างหลัง! พวกมันบุกเข้ามาแล้ว');
+  if (sim.hostageHit) out.push('ยิงโดนลูกเรือที่ถูกจับไว้! ต้องข้ามตำแหน่งนั้น');
+  if (goal.targetsLeft !== undefined) {
+    const left = sim.targetsLeft();
+    if (left > goal.targetsLeft && !sim.hostageHit) out.push(`ยังเหลือเคลธอีก ${left} ตัว`);
+    if (sim.wasted > 0 && !res.runtimeError) out.push(`ยิงพลาดเป้าไป ${sim.wasted} นัด (ยิงตอนไม่มีเป้า หรือยิงตำแหน่งที่ว่าง) กระสุนมีจำกัด ต้องยิงให้พอดี`);
+  }
+  if (goal.gridFull && sim.spec.grid) {
+    const g = sim.spec.grid;
+    let missing = 0, twice = 0;
+    for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) {
+      const n = sim.cells[r + ',' + c] ?? 0;
+      if (n === 0) missing++;
+      if (n > 1) twice++;
+    }
+    if (missing) out.push(`ยังมีแผงพลังงานที่ไม่ได้เปิดอีก ${missing} ช่อง (ต้องครบ ${g.rows} แถว × ${g.cols} ช่อง)`);
+    if (twice) out.push(`มีแผงที่ถูกสั่งเปิดซ้ำ ${twice} ช่อง`);
+    if (sim.badCell) out.push(`สั่ง powerCell นอกตาราง: แถวต้องเป็น 0 ถึง ${g.rows - 1} และช่องต้องเป็น 0 ถึง ${g.cols - 1}`);
+  }
   if (goal.at) {
     const ok = goal.at === 'pad' ? sim.onPad() : sim.bot.x === goal.at[0] && sim.bot.y === goal.at[1];
     if (!ok && !sim.bumped) out.push(goal.at === 'pad' ? 'บิตยังไปไม่ถึงแผ่นเหยียบสีเขียว' : 'บิตยังไปไม่ถึงจุดหมาย');
@@ -190,7 +211,7 @@ export function runPuzzle(level: Level, p: Puzzle, code: string): Verdict {
       return { status: 'compile', compileError: result.compileError, shown: run, cases: [run], warnings: [], code };
     }
     const reasons = judge(goal, sim, result);
-    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped });
+    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped || sim.hostageHit });
   }
   const firstFail = runs.find((r) => !r.pass && r.drama) ?? runs.find((r) => !r.pass);
   const shown = firstFail ?? runs[0];

@@ -54,6 +54,13 @@ export class WorldSim implements Host {
   lastArgs: Record<string, HostValue[]> = {};
   bumped = false;
   caught = false;
+  /** เป้ายิงตามตำแหน่ง (index 0 = ตำแหน่ง 1): 'k' เคลธ, 'h' ตัวประกัน, '' ว่าง */
+  slots: string[] = [];
+  wasted = 0;
+  hostageHit = false;
+  shield = 0;
+  cells: Record<string, number> = {};
+  badCell = false;
 
   constructor(public spec: WorldSpec, public goal: Goal = {}) {
     const m = parseMap(spec.map);
@@ -63,14 +70,27 @@ export class WorldSim implements Host {
     const b = m.find('B')[0] ?? { x: 0, y: 0 };
     this.bot = { x: b.x, y: b.y, dir: spec.dir ?? 'N' };
     this.hasDoor = m.find('D').length > 0;
-    this.aliens = spec.aliens ?? spec.sensors?.scanAliens ?? 0;
+    this.aliens = spec.aliens ?? (typeof spec.sensors?.scanAliens === 'number' ? spec.sensors.scanAliens : 0);
     this.inputs = [...(spec.inputs ?? [])];
 
-    for (const name of spec.api ?? []) this.fns[name] = { min: 0, max: 0 };
+    const argc: Record<string, number> = { fireAt: 1, powerCell: 2 };
+    for (const name of spec.api ?? []) this.fns[name] = { min: argc[name] ?? 0, max: argc[name] ?? 0 };
+    // เป้ายิง
+    const places = m.find('A').length;
+    let left = spec.targets ?? 0;
+    for (let i = 0; i < places; i++) {
+      if (spec.hostage === i + 1) this.slots.push('h');
+      else if (left > 0) {
+        this.slots.push('k');
+        left--;
+      } else this.slots.push('');
+    }
+    this.shield = spec.shield ?? 0;
+    if (spec.shield !== undefined) this.fns.readShield = { min: 0, max: 0, ret: 'int' };
     for (const [name, a] of Object.entries(spec.actions ?? {})) this.fns[name] = { min: a.args, max: a.args };
     for (const name of Object.keys(spec.sensors ?? {})) {
       const v = spec.sensors![name];
-      this.fns[name] = { min: 0, max: 0, ret: Number.isInteger(v) ? 'int' : 'float' };
+      this.fns[name] = { min: 0, max: 0, ret: typeof v === 'string' ? 'char' : Number.isInteger(v) ? 'int' : 'float' };
     }
     this.fns.pinMode = { min: 2, max: 2 };
     this.fns.digitalWrite = { min: 2, max: 2 };
@@ -84,10 +104,38 @@ export class WorldSim implements Host {
   blocked(x: number, y: number): boolean {
     const c = this.cell(x, y);
     if (c === 'D') return this.door !== 'open';
-    return c === '#' || c === ' ' || c === 'X' || c === 'T' || c === 'L' || c === 'G' || c === 'W' || c === 'A';
+    return c === '#' || c === ' ' || c === 'X' || c === 'T' || c === 'L' || c === 'G' || c === 'W' || c === 'A' || c === 'U';
   }
   onPad(): boolean {
     return this.cell(this.bot.x, this.bot.y) === 'P';
+  }
+
+  targetsLeft(): number {
+    return this.slots.filter((s) => s === 'k').length;
+  }
+
+  private shoot(ctx: HostCtx, index: number): void {
+    const s = this.slots[index];
+    if (s === 'h') {
+      this.hostageHit = true;
+      this.halted = 'hostage';
+      ctx.emit({ type: 'fire', index, hostage: true });
+      return;
+    }
+    if (s !== 'k') {
+      this.wasted++;
+      ctx.emit({ type: 'fire', index: index >= 0 && index < this.slots.length ? index : -1, miss: true });
+      return;
+    }
+    if (this.shield > 0) {
+      this.shield--;
+      if (this.shield > 0) {
+        ctx.emit({ type: 'fire', index, shield: this.shield });
+        return;
+      }
+    }
+    this.slots[index] = '';
+    ctx.emit({ type: 'fire', index, kill: true });
   }
 
   private openDoor(ctx: HostCtx, how: string): void {
@@ -145,6 +193,28 @@ export class WorldSim implements Host {
         this.door = 'locked';
         ctx.emit({ type: 'door', state: 'locked' });
         return;
+      case 'fire':
+        return this.shoot(ctx, this.slots.findIndex((s) => s === 'k'));
+      case 'fireAt':
+        return this.shoot(ctx, Math.trunc(Number(args[0])) - 1);
+      case 'aimLeft':
+      case 'aimRight':
+      case 'standby':
+        ctx.emit({ type: 'aim', dir: name });
+        return;
+      case 'readShield':
+        ctx.emit({ type: 'sense', name, value: this.shield });
+        return this.shield;
+      case 'powerCell': {
+        const r = Math.trunc(Number(args[0])), c = Math.trunc(Number(args[1]));
+        const g = this.spec.grid;
+        const ok = !!g && r >= 0 && c >= 0 && r < g.rows && c < g.cols;
+        if (!ok) this.badCell = true;
+        const key = r + ',' + c;
+        this.cells[key] = (this.cells[key] ?? 0) + 1;
+        ctx.emit({ type: 'cell', r, c, ok, again: this.cells[key] > 1 });
+        return;
+      }
       case 'pinMode':
         this.pinMode[Number(args[0])] = Number(args[1]);
         return;
