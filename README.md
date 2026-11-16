@@ -6,8 +6,8 @@
 
 | สถานะ | รายละเอียด |
 | --- | --- |
-| เล่นได้แล้ว | องก์ 1 "ยานถูกบุก" 9 ด่าน 27 โจทย์: โครงสร้างโปรแกรม, Serial, ตัวแปร, ชนิดข้อมูล, `const` และขาของบอร์ด, การคำนวณ, รับค่า, `if`, `if / else if / else`<br>องก์ 2 "สู้กลับ" 7 ด่าน 18 โจทย์: `switch / case`, `break`, `for`, `while`, `do…while`, `continue`, ลูปซ้อนลูป |
-| ออกแบบแล้ว ยังไม่สร้าง | องก์ 3–7 (26 ด่าน) แสดงในแผนที่เป็นด่านล็อก รายละเอียดใน `docs/game-design.md` |
+| เล่นได้แล้ว | องก์ 1 "ยานถูกบุก" 9 ด่าน 27 โจทย์: โครงสร้างโปรแกรม, Serial, ตัวแปร, ชนิดข้อมูล, `const` และขาของบอร์ด, การคำนวณ, รับค่า, `if`, `if / else if / else`<br>องก์ 2 "สู้กลับ" 7 ด่าน 18 โจทย์: `switch / case`, `break`, `for`, `while`, `do…while`, `continue`, ลูปซ้อนลูป<br>องก์ 3 "หนีลงดาว" 5 ด่าน 14 โจทย์: ฟังก์ชัน, parameter, `return`, ฟังก์ชัน `bool`, ตัวแปร local / global |
+| ออกแบบแล้ว ยังไม่สร้าง | องก์ 4–7 (21 ด่าน) แสดงในแผนที่เป็นด่านล็อก รายละเอียดใน `docs/game-design.md` |
 
 ## วิธีรัน
 
@@ -26,7 +26,7 @@ npm run dev
 | `npm run dev` | เปิดเกมแบบพัฒนา แก้ไฟล์แล้วหน้าเว็บเปลี่ยนตามทันที |
 | `npm run build` | ตรวจชนิดข้อมูล แล้วสร้างไฟล์ static ลง `dist/` (เอาไปวางบนเว็บเซิร์ฟเวอร์ใดก็ได้ หรือห่อเป็น APK) |
 | `npm run preview` | เปิดดูผลจาก `dist/` |
-| `npm test` | รันชุดทดสอบ: ตัวแปลภาษา 103 ข้อ + ข้อมูลด่านและคำตอบของทุกโจทย์ 164 ข้อ |
+| `npm test` | รันชุดทดสอบ: ตัวแปลภาษา 103 ข้อ + ข้อมูลด่านและคำตอบของทุกโจทย์ 222 ข้อ |
 
 ## วิธีเล่น
 
@@ -87,17 +87,18 @@ npm run dev
    | `U` | ป้อมปืน |
 
 3. เปิดคำสั่งที่ด่านใช้ได้
-   - `api`: `forward` `backward` `turnLeft` `turnRight` `openDoor` `closeDoor` `lockDoor` `fire` `fireAt` `aimLeft` `aimRight` `standby` `powerCell`
+   - `api`: `forward` `backward` `turnLeft` `turnRight` `openDoor` `closeDoor` `lockDoor` `fire` `fireAt` `aimLeft` `aimRight` `standby` `powerCell` `unlockClamp` `releaseClamp` `engineOn` `engineOff` `openChute` `extendLegs` `beginDescent`
+   - ยานกู้ชีพ: `pod: { clamps: 3, chute: [500, 3000] }` ทำให้ยานที่ `G` เป็นภาพจำลองลอย มีแขนยึดตามจำนวน และกำหนดช่วงความสูง (`readAltitude()`) ที่กางร่มได้
    - เป้ายิง: `targets` (จำนวนเคลธที่ยืนบน `A` เรียงจากซ้าย), `shield` (โล่ของตัวแรก อ่านด้วย `readShield()`), `hostage` (ตำแหน่งลูกเรือที่ห้ามยิง), `grid` (ตารางของ `powerCell`)
    - `pins`: อุปกรณ์บนขาของบอร์ด เช่น `{ 13: 'lamp', 7: 'lock' }` ใช้กับ `pinMode` / `digitalWrite`
    - `actions`: คำสั่งส่งค่า เช่น `enterCode: { args: 1, label: 'แป้นรหัส', opensDoor: true }`
    - `sensors`: คำสั่งอ่านค่า เช่น `{ scanAliens: 0 }` · `inputs`: ค่าที่ `readNumber()` จะได้
 4. เขียนโจทย์ใน `puzzles` เลือก `kind` เป็น `blank` `order` `fix` หรือ `type` (รูปแบบของแต่ละชนิดอธิบายใน `src/game/types.ts`)
-5. กำหนดเป้าหมายใน `goal` เช่น `door: 'open'`, `at: 'pad'`, `serial: "SOS"`, `pins: { 13: 1 }`, `set: { enterCode: [1750] }`, `targetsLeft: 0`, `gridFull: true` และถ้าต้องการทดสอบหลายค่า ใส่ `cases`
+5. กำหนดเป้าหมายใน `goal` เช่น `door: 'open'`, `at: 'pad'`, `serial: "SOS"`, `pins: { 13: 1 }`, `set: { enterCode: [1750] }`, `targetsLeft: 0`, `gridFull: true`, `clampsLeft: 0`, `burns: [2, 4]`, `calledTimes: { beginDescent: 1 }` และถ้าต้องการทดสอบหลายค่า ใส่ `cases`
 6. ลงทะเบียนใน `src/game/levels/index.ts` (import แล้วเพิ่มในรายการ `LEVELS` ตามลำดับที่จะให้เล่น) ถ้าเป็นองก์ที่เคยเป็นด่านล็อก ให้ลบชื่อออกจาก `planned` ขององก์นั้น
 7. รัน `npm test` ชุดทดสอบจะตรวจให้เองว่า คำตอบของโจทย์ใหม่ผ่านจริง โค้ดตั้งต้นยังไม่ผ่าน และข้อมูลถูกรูปแบบ
 
-ถ้าด่านใหม่ต้องการอุปกรณ์แบบใหม่ (เช่น เครื่องยนต์ยานกู้ชีพขององก์ 3) ต้องเพิ่ม 2 ที่: ตรรกะใน `src/game/world.ts` (เมธอด `call`) และภาพใน `src/view/worldView.ts` (เมธอด `load` กับ `apply`)
+ถ้าด่านใหม่ต้องการอุปกรณ์แบบใหม่ (เช่น ตู้เก็บตัวอย่างขององก์ 4) ต้องเพิ่ม 2 ที่: ตรรกะใน `src/game/world.ts` (เมธอด `call`) และภาพใน `src/view/worldView.ts` (เมธอด `load` กับ `apply`)
 
 ## ภาพและโมเดล
 

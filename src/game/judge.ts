@@ -134,6 +134,27 @@ function stripComments(code: string): string {
   return code.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 }
 
+/** ระยะเวลาการจุดเครื่องยนต์แต่ละครั้ง (วินาที) นับจาก delay ระหว่าง engineOn กับ engineOff */
+export function burnsOf(res: RunResult): number[] {
+  const out: number[] = [];
+  let on = false, ms = 0;
+  for (const st of res.trace) {
+    for (const e of st.events) {
+      if (e.type !== 'engine') continue;
+      if (e.on && !on) {
+        on = true;
+        ms = 0;
+      } else if (!e.on && on) {
+        on = false;
+        out.push(ms / 1000);
+      }
+    }
+    if (on) ms += st.wait;
+  }
+  if (on) out.push(ms / 1000);
+  return out;
+}
+
 function judge(goal: Goal, sim: WorldSim, res: RunResult): string[] {
   const out: string[] = [];
   if (res.runtimeError) out.push(res.runtimeError.th);
@@ -156,6 +177,20 @@ function judge(goal: Goal, sim: WorldSim, res: RunResult): string[] {
     if (missing) out.push(`ยังมีแผงพลังงานที่ไม่ได้เปิดอีก ${missing} ช่อง (ต้องครบ ${g.rows} แถว × ${g.cols} ช่อง)`);
     if (twice) out.push(`มีแผงที่ถูกสั่งเปิดซ้ำ ${twice} ช่อง`);
     if (sim.badCell) out.push(`สั่ง powerCell นอกตาราง: แถวต้องเป็น 0 ถึง ${g.rows - 1} และช่องต้องเป็น 0 ถึง ${g.cols - 1}`);
+  }
+  if (sim.clampJam) out.push('แขนยึดติดขัด! ต้องสั่ง unlockClamp(); ก่อน releaseClamp(); ทุกครั้ง และห้ามปลดเกินจำนวนแขนที่มี');
+  if (goal.clampsLeft !== undefined && !sim.clampJam && sim.clamps > goal.clampsLeft) out.push(`แขนยึดยังจับยานอยู่อีก ${sim.clamps} ตัว`);
+  if (sim.chuteTorn) out.push('กางร่มผิดจังหวะ ร่มขาด! ต้องเช็กความสูงให้อยู่ในช่วงปลอดภัยก่อน');
+  if (goal.burns) {
+    const got = burnsOf(res);
+    const show = (a: number[]) => (a.length ? a.map((x) => Math.round(x * 100) / 100).join(', ') + ' วินาที' : 'ไม่ได้จุดเลย');
+    const same = got.length === goal.burns.length && got.every((x, i) => Math.abs(x - goal.burns![i]) < 0.01);
+    if (sim.engine) out.push('เครื่องยนต์ยังติดค้างอยู่ ต้องสั่ง engineOff(); หลังครบเวลา');
+    else if (!same) out.push(goal.burns.length ? `ต้องจุดเครื่องยนต์ ${show(goal.burns)} ตามลำดับ แต่ที่ทำคือ ${show(got)}` : `กรณีนี้ไม่ต้องจุดเครื่องยนต์ แต่จุดไป ${show(got)}`);
+  }
+  for (const [name, want] of Object.entries(goal.calledTimes ?? {})) {
+    const n = res.calls.filter((c) => c === name).length;
+    if (n !== want) out.push(`${name}() ต้องถูกเรียก ${want} ครั้งพอดี แต่ถูกเรียก ${n} ครั้ง`);
   }
   if (goal.at) {
     const ok = goal.at === 'pad' ? sim.onPad() : sim.bot.x === goal.at[0] && sim.bot.y === goal.at[1];
@@ -211,7 +246,7 @@ export function runPuzzle(level: Level, p: Puzzle, code: string): Verdict {
       return { status: 'compile', compileError: result.compileError, shown: run, cases: [run], warnings: [], code };
     }
     const reasons = judge(goal, sim, result);
-    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped || sim.hostageHit });
+    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped || sim.hostageHit || sim.clampJam || sim.chuteTorn });
   }
   const firstFail = runs.find((r) => !r.pass && r.drama) ?? runs.find((r) => !r.pass);
   const shown = firstFail ?? runs[0];

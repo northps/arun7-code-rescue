@@ -115,3 +115,92 @@ describe('ผลของโค้ดที่ผิดแบบที่พบ�
     expect(v.status).toBe('fail');
   });
 });
+
+describe('องก์ 3: ผลของโค้ดที่ผิด', () => {
+  const find = (id: string) => {
+    for (const l of LEVELS) for (const p of l.puzzles) if (p.id === id) return { l, p };
+    throw new Error(id);
+  };
+  const events = (v: ReturnType<typeof runPuzzle>, type: string) =>
+    v.cases.flatMap((c) => c.result.trace.flatMap((s) => s.events.filter((e) => e.type === type)));
+  test('3-1-a releaseClamp without unlock jams', () => {
+    const { l, p } = find('3-1-a');
+    const v = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['void', '()', 'releaseClamp'] }));
+    expect(v.status).toBe('fail');
+    expect(events(v, 'clamp').some((e) => e.step === 'jam')).toBe(true);
+  });
+  test('3-1-b wrong case is a compile error with a suggestion, then missing () leaves a clamp', () => {
+    const { l, p } = find('3-1-b');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('compile');
+    expect(v.compileError?.kind).toBe('notDeclared');
+    expect(v.compileError?.line).toBe(7);
+    expect(v.compileError?.en).toContain('freeClamp');
+    const v2 = runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 7: 1 } }));
+    expect(v2.status).toBe('fail');
+    expect(v2.warnings.map((w) => w.kind)).toContain('callNoParens');
+    expect(v2.shown.reasons.join(' ')).toContain('1');
+  });
+  test('3-2-b too few, then too many arguments', () => {
+    const { l, p } = find('3-2-b');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('compile');
+    expect(v.compileError?.kind).toBe('tooFew');
+    expect(v.compileError?.line).toBe(8);
+    const v2 = runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 8: 1 } }));
+    expect(v2.status).toBe('compile');
+    expect(v2.compileError?.kind).toBe('tooMany');
+  });
+  test('3-2-c engine left on is reported', () => {
+    const { l, p } = find('3-2-c');
+    const v = runPuzzle(l, p, 'void burn(int sec) {\n  engineOn();\n  delay(sec * 1000);\n}\nvoid setup() {\n  burn(2);\n  burn(1);\n  burn(3);\n}\nvoid loop() {\n}');
+    expect(v.status).toBe('fail');
+    expect(v.shown.reasons.join(' ')).toContain('engineOff');
+  });
+  test('3-3-b printing instead of return warns missingReturn', () => {
+    const { l, p } = find('3-3-b');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('fail');
+    expect(v.warnings.map((w) => w.kind)).toContain('missingReturn');
+    const v2 = runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 3: 1 } }));
+    expect(v2.status).toBe('fail');
+  });
+  test('3-3-c answering without a function is refused', () => {
+    const { l, p } = find('3-3-c');
+    const v = runPuzzle(l, p, 'void setup() {\n  int left = readHeatLeft();\n  int right = readHeatRight();\n  if (left > right) { setShield(left); } else { setShield(right); }\n}\nvoid loop() {\n}');
+    expect(v.status).toBe('fail');
+  });
+  test('3-4-a using || tears the chute at 5000 m', () => {
+    const { l, p } = find('3-4-a');
+    const v = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['bool', '||'] }));
+    expect(v.status).toBe('fail');
+    expect(events(v, 'chute').some((e) => e.ok === false)).toBe(true);
+    expect(v.shown.label).toContain('5000');
+  });
+  test('3-4-b braking when already slow fails', () => {
+    const { l, p } = find('3-4-b');
+    const v = runPuzzle(l, p, 'bool isSlow(int v) {\n  return v < 20;\n}\nvoid setup() {\n  int v = readSpeed();\n  if (!isSlow(v)) {\n    engineOn();\n    delay(2000);\n    engineOff();\n  }\n}\nvoid loop() {\n}');
+    expect(v.status).toBe('fail');
+    expect(v.shown.label).toContain('20');
+  });
+  test('3-5-a local counter prints 1 every round; shadowing still fails; const is a compile error', () => {
+    const { l, p } = find('3-5-a');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('fail');
+    expect(v.shown.result.serial.trim().split(/\s+/)).toEqual(['1', '1', '1', '1']);
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 1: 1 } })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 1: 2, 7: 1 } })).status).toBe('compile');
+  });
+  test('3-5-b variable from setup is not visible in loop', () => {
+    const { l, p } = find('3-5-b');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('compile');
+    expect(v.compileError?.kind).toBe('notDeclared');
+    expect(v.compileError?.line).toBe(8);
+  });
+  test('3-5-c landing on every round from 3 onward fails', () => {
+    const { l, p } = find('3-5-c');
+    const v = runPuzzle(l, p, 'int n = 0;\nvoid land() {\n  beginDescent();\n  extendLegs();\n}\nvoid setup() {\n  Serial.begin(9600);\n}\nvoid loop() {\n  n++;\n  Serial.println(n);\n  if (n >= 3) {\n    land();\n  }\n}');
+    expect(v.status).toBe('fail');
+  });
+});

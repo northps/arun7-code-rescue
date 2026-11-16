@@ -18,7 +18,8 @@ export type PinDevice = 'lamp' | 'lock';
 export type ApiName =
   | 'forward' | 'backward' | 'turnLeft' | 'turnRight'
   | 'openDoor' | 'closeDoor' | 'lockDoor'
-  | 'fire' | 'fireAt' | 'aimLeft' | 'aimRight' | 'standby' | 'powerCell';
+  | 'fire' | 'fireAt' | 'aimLeft' | 'aimRight' | 'standby' | 'powerCell'
+  | 'unlockClamp' | 'releaseClamp' | 'engineOn' | 'engineOff' | 'openChute' | 'extendLegs' | 'beginDescent';
 
 export interface WorldSpec {
   /**
@@ -47,6 +48,11 @@ export interface WorldSpec {
   hostage?: number;
   /** ตารางแผงพลังงานสำหรับ powerCell(แถว, ช่อง): origin = ช่องบนซ้ายในแผนที่ */
   grid?: { rows: number; cols: number; origin: [number, number] };
+  /**
+   * ยานกู้ชีพ (แสดงเป็นภาพจำลองลอยที่ 'G'): clamps = จำนวนแขนยึดที่ต้องปลด (unlockClamp แล้ว releaseClamp)
+   * chute = ช่วงความสูง [ต่ำสุด, สูงสุด] ของ readAltitude() ที่กางร่มได้โดยไม่ขาด
+   */
+  pod?: { clamps?: number; chute?: [number, number] };
   /** จำนวนรอบของ loop() */
   loops?: number;
   /** ห้องมืดจนกว่าจะเปิดโคมไฟ */
@@ -71,6 +77,12 @@ export interface Goal {
   targetsLeft?: number;
   /** ต้องเปิดแผงพลังงานครบทุกช่อง ช่องละครั้ง */
   gridFull?: boolean;
+  /** แขนยึดยานต้องเหลือกี่ตัว (ปกติ 0) */
+  clampsLeft?: number;
+  /** การจุดเครื่องยนต์แต่ละครั้ง นานกี่วินาที ตามลำดับ (engineOn → delay → engineOff) */
+  burns?: number[];
+  /** คำสั่งต้องถูกเรียกกี่ครั้งพอดี */
+  calledTimes?: Record<string, number>;
 }
 
 /** กรณีทดสอบ: ค่าเซนเซอร์/ค่าที่รับเข้ามาต่างกัน เป้าหมายต่างกัน */

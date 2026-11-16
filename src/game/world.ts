@@ -61,6 +61,11 @@ export class WorldSim implements Host {
   shield = 0;
   cells: Record<string, number> = {};
   badCell = false;
+  clamps = 0;
+  clampUnlocked = false;
+  clampJam = false;
+  engine = false;
+  chuteTorn = false;
 
   constructor(public spec: WorldSpec, public goal: Goal = {}) {
     const m = parseMap(spec.map);
@@ -86,6 +91,7 @@ export class WorldSim implements Host {
       } else this.slots.push('');
     }
     this.shield = spec.shield ?? 0;
+    this.clamps = spec.pod?.clamps ?? 0;
     if (spec.shield !== undefined) this.fns.readShield = { min: 0, max: 0, ret: 'int' };
     for (const [name, a] of Object.entries(spec.actions ?? {})) this.fns[name] = { min: a.args, max: a.args };
     for (const name of Object.keys(spec.sensors ?? {})) {
@@ -215,6 +221,40 @@ export class WorldSim implements Host {
         ctx.emit({ type: 'cell', r, c, ok, again: this.cells[key] > 1 });
         return;
       }
+      case 'unlockClamp':
+        this.clampUnlocked = true;
+        ctx.emit({ type: 'clamp', step: 'unlock', index: (this.spec.pod?.clamps ?? 0) - this.clamps });
+        return;
+      case 'releaseClamp':
+        if (!this.clampUnlocked || this.clamps <= 0) {
+          this.clampJam = true;
+          this.halted = 'jam';
+          ctx.emit({ type: 'clamp', step: 'jam', none: this.clamps <= 0 });
+          return;
+        }
+        this.clampUnlocked = false;
+        this.clamps--;
+        ctx.emit({ type: 'clamp', step: 'release', index: (this.spec.pod?.clamps ?? 0) - this.clamps - 1, left: this.clamps });
+        return;
+      case 'engineOn':
+      case 'engineOff':
+        this.engine = name === 'engineOn';
+        ctx.emit({ type: 'engine', on: this.engine });
+        return;
+      case 'openChute': {
+        const h = this.spec.sensors?.readAltitude;
+        const range = this.spec.pod?.chute;
+        const ok = !(range && typeof h === 'number') || (h > range[0] && h < range[1]);
+        if (!ok) this.chuteTorn = true;
+        ctx.emit({ type: 'chute', ok, high: typeof h === 'number' && !!range && h >= range[1] });
+        return;
+      }
+      case 'extendLegs':
+        ctx.emit({ type: 'legs' });
+        return;
+      case 'beginDescent':
+        ctx.emit({ type: 'descent' });
+        return;
       case 'pinMode':
         this.pinMode[Number(args[0])] = Number(args[1]);
         return;

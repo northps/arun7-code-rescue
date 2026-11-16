@@ -77,6 +77,16 @@ export class WorldView {
   panel: { tex: THREE.CanvasTexture; ctx: CanvasRenderingContext2D; pos: THREE.Vector3 } | null = null;
   trims: THREE.MeshStandardMaterial[] = [];
   pod: THREE.Group | null = null;
+  /** ชิ้นส่วนของภาพจำลองยานกู้ชีพ (องก์ 3) */
+  podFx: {
+    clamps: { g: THREE.Object3D; lamp: THREE.MeshStandardMaterial; home: THREE.Vector3 }[];
+    flame: THREE.Mesh;
+    flameLight: THREE.PointLight;
+    chute: THREE.Group;
+    legs: THREE.Object3D[];
+    baseY: number;
+    burning: boolean;
+  } | null = null;
   turret: { head: THREE.Object3D; pos: THREE.Vector3 } | null = null;
   crew: THREE.Group | null = null;
   shieldMesh: THREE.Mesh | null = null;
@@ -249,6 +259,7 @@ export class WorldView {
     this.trims = [];
     this.panel = null;
     this.pod = null;
+    this.podFx = null;
     this.turret = null;
     this.crew = null;
     this.shieldMesh = null;
@@ -649,6 +660,94 @@ export class WorldView {
     g.position.copy(p);
     this.root.add(g);
     this.pod = g;
+    if (this.spec?.pod) this.buildPodFx(g, this.spec.pod.clamps ?? 0);
+  }
+
+  /** ภาพจำลองยานกู้ชีพลอยกลางห้อง: แขนยึด เปลวเครื่องยนต์ ร่ม ขาตั้ง */
+  private buildPodFx(g: THREE.Group, clampCount: number): void {
+    const baseY = 0.95;
+    g.scale.setScalar(1.35);
+    g.position.y = baseY;
+    // แท่นฉายภาพ
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.7, 0.1, 40), std(0x1b2a3d, { metalness: 0.7, roughness: 0.3 }));
+    base.position.set(g.position.x, 0.08, g.position.z);
+    this.root.add(base);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.025, 8, 48), glow(C.cyan, 2.2));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.set(g.position.x, 0.14, g.position.z);
+    this.root.add(ring);
+    // แขนยึด
+    const clamps: { g: THREE.Object3D; lamp: THREE.MeshStandardMaterial; home: THREE.Vector3 }[] = [];
+    for (let i = 0; i < clampCount; i++) {
+      const a = (i / clampCount) * Math.PI * 2 + Math.PI / 2;
+      const arm = new THREE.Group();
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.09, 0.12), std(C.orange, { metalness: 0.4, roughness: 0.4 }));
+      bar.position.x = 0.66;
+      bar.castShadow = true;
+      arm.add(bar);
+      const claw = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.2), std(0x8fa0b8, { metalness: 0.7, roughness: 0.3 }));
+      claw.position.x = 0.4;
+      arm.add(claw);
+      const lampMat = glow(C.red, 2.4);
+      const lamp = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 8), lampMat);
+      lamp.position.set(0.72, 0.1, 0);
+      arm.add(lamp);
+      arm.rotation.y = a;
+      arm.position.set(g.position.x, baseY + 0.95, g.position.z);
+      this.root.add(arm);
+      clamps.push({ g: arm, lamp: lampMat, home: arm.position.clone() });
+    }
+    // เปลวเครื่องยนต์
+    const flame = new THREE.Mesh(
+      new THREE.ConeGeometry(0.22, 0.55, 16, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffb347, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }),
+    );
+    flame.rotation.x = Math.PI;
+    flame.position.y = -0.14;
+    flame.visible = false;
+    g.add(flame);
+    const flameLight = new THREE.PointLight(0xff9a3c, 0, 6, 1.6);
+    flameLight.position.y = -0.1;
+    g.add(flameLight);
+    // ร่ม
+    const chute = new THREE.Group();
+    const canopy = new THREE.Mesh(
+      new THREE.SphereGeometry(0.62, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshStandardMaterial({ color: C.orange, emissive: C.orange, emissiveIntensity: 0.25, roughness: 0.7, side: THREE.DoubleSide }),
+    );
+    canopy.position.y = 1.75;
+    canopy.scale.y = 0.6;
+    chute.add(canopy);
+    const lineMat = std(0xdfe8f5, { metalness: 0.1, roughness: 0.8 });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const ln = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.62, 4), lineMat);
+      ln.position.set(Math.cos(a) * 0.3, 1.5, Math.sin(a) * 0.3);
+      ln.rotation.z = Math.cos(a) * 0.9;
+      ln.rotation.x = -Math.sin(a) * 0.9;
+      chute.add(ln);
+    }
+    chute.visible = false;
+    g.add(chute);
+    // ขาตั้ง
+    const legs: THREE.Object3D[] = [];
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + Math.PI / 3;
+      const pivot = new THREE.Group();
+      pivot.position.set(Math.cos(a) * 0.3, 0.3, Math.sin(a) * 0.3);
+      pivot.rotation.y = -a;
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.5, 6), std(0xdfe8f5, { metalness: 0.7, roughness: 0.3 }));
+      leg.position.set(0.14, -0.2, 0);
+      leg.rotation.z = 0.6;
+      pivot.add(leg);
+      const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.03, 10), std(C.orange, { metalness: 0.4 }));
+      foot.position.set(0.28, -0.42, 0);
+      pivot.add(foot);
+      pivot.visible = false;
+      g.add(pivot);
+      legs.push(pivot);
+    }
+    this.podFx = { clamps, flame, flameLight, chute, legs, baseY, burning: false };
   }
 
   private buildBot(): THREE.Group {
@@ -755,7 +854,23 @@ export class WorldView {
     }
     this.setDark(!!spec.dark);
     for (const p of this.pads) (p.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.4;
-    if (this.pod) this.pod.position.y = 0;
+    if (this.pod) this.pod.position.y = this.podFx ? this.podFx.baseY : 0;
+    if (this.podFx) {
+      const fx = this.podFx;
+      for (const c of fx.clamps) {
+        c.g.visible = true;
+        c.g.position.copy(c.home);
+        c.g.scale.setScalar(1);
+        c.lamp.emissive.setHex(C.red);
+      }
+      fx.flame.visible = false;
+      fx.flameLight.intensity = 0;
+      fx.burning = false;
+      fx.chute.visible = false;
+      fx.chute.rotation.set(0, 0, 0);
+      fx.chute.position.set(0, 0, 0);
+      for (const l of fx.legs) l.visible = false;
+    }
     const firstAction = Object.values(spec.actions ?? {})[0];
     this.drawPanel(firstAction ? firstAction.label : 'SERIAL', firstAction ? '- - -' : '', 'idle');
     this.flashEl.className = 'view-flash';
@@ -980,6 +1095,96 @@ export class WorldView {
         }
         return 460;
       }
+      case 'clamp': {
+        const fx = this.podFx;
+        if (!fx || !this.pod) return 0;
+        const at = this.pod.position.clone().setY(2.3);
+        if (ev.step === 'jam') {
+          this.flash('red');
+          this.floatText(ev.none ? 'ไม่มีแขนยึดเหลือ!' : 'ติดขัด! ยังไม่ปลดล็อก', at, '#ff5566');
+          this.burst(this.pod.position.clone().setY(1.5), C.red, 14);
+          return 700;
+        }
+        const c = fx.clamps[ev.index as number];
+        if (!c) return 0;
+        if (ev.step === 'unlock') {
+          c.lamp.emissive.setHex(C.green);
+          return 260;
+        }
+        const dir = new THREE.Vector3(Math.cos(-c.g.rotation.y), 0, Math.sin(-c.g.rotation.y));
+        const from = c.g.position.clone();
+        this.tween(
+          420,
+          (k) => {
+            c.g.position.copy(from).addScaledVector(dir, k * 0.9);
+            c.g.scale.setScalar(1 - k * 0.6);
+          },
+          () => {
+            c.g.visible = false;
+          },
+        );
+        if (ev.left === 0) this.floatText('ยานเป็นอิสระ!', at, '#5dffb0');
+        return 460;
+      }
+      case 'engine': {
+        const fx = this.podFx;
+        if (!fx) return 0;
+        fx.burning = !!ev.on;
+        fx.flame.visible = fx.burning;
+        fx.flameLight.intensity = fx.burning ? 7 : 0;
+        if (fx.burning && this.pod) this.burst(this.pod.position.clone().setY(0.4), 0xffb347, 10);
+        return 200;
+      }
+      case 'chute': {
+        const fx = this.podFx;
+        if (!fx || !this.pod) return 0;
+        fx.chute.visible = true;
+        fx.chute.scale.setScalar(0.2);
+        const at = this.pod.position.clone().setY(3.2);
+        if (ev.ok) {
+          this.tween(450, (k) => fx.chute.scale.setScalar(0.2 + 0.8 * k));
+          this.floatText('ร่มกางแล้ว', at, '#5dffb0');
+          return 600;
+        }
+        this.flash('red');
+        this.floatText(ev.high ? 'สูงเกิน ร่มขาด!' : 'ต่ำเกิน กางไม่ทัน!', at, '#ff5566');
+        this.tween(
+          700,
+          (k) => {
+            fx.chute.scale.setScalar(0.2 + 0.8 * Math.min(1, k * 3));
+            fx.chute.rotation.z = k * 1.4;
+            fx.chute.position.set(k * 1.2, k * 0.8, 0);
+          },
+          () => {
+            fx.chute.visible = false;
+          },
+        );
+        this.burst(this.pod.position.clone().setY(2.6), C.orange, 16);
+        return 800;
+      }
+      case 'legs': {
+        const fx = this.podFx;
+        if (!fx) return 0;
+        for (const l of fx.legs) {
+          l.visible = true;
+          l.scale.setScalar(0.1);
+        }
+        this.tween(350, (k) => {
+          for (const l of fx.legs) l.scale.setScalar(0.1 + 0.9 * k);
+        });
+        return 400;
+      }
+      case 'descent': {
+        const fx = this.podFx;
+        if (!fx || !this.pod) return 0;
+        const pod = this.pod;
+        const y0 = pod.position.y;
+        this.tween(900, (k) => {
+          pod.position.y = y0 + (0.42 - y0) * k;
+        });
+        this.floatText('เริ่มลงจอด', pod.position.clone().setY(2.6), '#7fd8ff');
+        return 950;
+      }
       case 'cell': {
         const g = this.spec?.grid;
         if (!g) return 0;
@@ -1167,7 +1372,12 @@ export class WorldView {
       }
     }
     this.alarm.intensity = this.alert ? pulse * (this.spec?.dark ? 2 : 5) : 0;
-    if (this.pod) this.pod.rotation.y = Math.sin(t * 0.5) * 0.1;
+    if (this.pod) this.pod.rotation.y = this.podFx ? t * 0.35 : Math.sin(t * 0.5) * 0.1;
+    if (this.podFx?.burning) {
+      const f = this.podFx.flame;
+      f.scale.set(1 + Math.sin(t * 40) * 0.12, 1 + Math.sin(t * 31) * 0.25, 1 + Math.cos(t * 37) * 0.12);
+      this.podFx.flameLight.intensity = 6 + Math.sin(t * 33) * 2;
+    }
     // เศษประกาย
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];

@@ -604,7 +604,7 @@ export class PlayScreen {
         this.view.apply({ type: 'serial', text: serial.replace(/\n$/, '') });
       }
       this.setOverlays(step.vars, serial);
-      await sleep((limit < trace.length ? 60 : 360) * speed() + Math.min(step.wait * 0.5, 900) * speed());
+      await sleep((limit < trace.length ? 60 : 360) * speed() + Math.min(step.wait * 0.5, 2000) * speed());
     }
     if (id !== this.playId) return;
     this.setRun(false);
