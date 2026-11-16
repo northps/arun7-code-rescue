@@ -468,3 +468,117 @@ describe('องก์ 5: ผลของโค้ดที่ผิด', () => 
     expect(v.status).toBe('fail');
   });
 });
+
+describe('องก์ 6: ผลของโค้ดที่ผิด', () => {
+  const find = (id: string) => {
+    for (const l of LEVELS) for (const p of l.puzzles) if (p.id === id) return { l, p };
+    throw new Error(id);
+  };
+  const events = (v: ReturnType<typeof runPuzzle>, type: string) =>
+    v.cases.flatMap((c) => c.result.trace.flatMap((s) => s.events.filter((e) => e.type === type)));
+  const sol = (id: string) => {
+    const { l, p } = find(id);
+    return { l, p, code: buildCode(p, solutionState(p)) };
+  };
+  /** แก้ครบทุกบรรทัดยกเว้นบรรทัดเดียว ต้องยังไม่ผ่าน */
+  const eachBugMatters = (id: string) => {
+    const { l, p } = find(id);
+    if (p.kind !== 'fix') throw new Error(id);
+    for (const skip of Object.keys(p.fixes)) {
+      const picks: Record<number, number> = {};
+      for (const [ln, f] of Object.entries(p.fixes)) picks[Number(ln)] = ln === skip ? 0 : f.answer;
+      expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks })).status, `${id} line ${skip}`).not.toBe('pass');
+    }
+  };
+
+  test('6-1-a wrong mode is refused', () => {
+    const { l, p } = find('6-1-a');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['enum', 'State', 'TURN'] })).status).toBe('fail');
+  });
+  test('6-1-b starter does not compile; every bug matters', () => {
+    const { l, p } = find('6-1-b');
+    expect(runPuzzle(l, p, buildCode(p, initialState(p))).status).toBe('compile');
+    eachBugMatters('6-1-b');
+  });
+  test('6-2-b every bug matters (reversed assignment, missing break, wrong next state)', () => {
+    eachBugMatters('6-2-b');
+  });
+  test('6-2-c a SCAN that never leaves its state fails', () => {
+    const { l, p, code } = sol('6-2-c');
+    const v = runPuzzle(l, p, code.replace('goTo(TURN);', ''));
+    expect(v.status).toBe('fail');
+  });
+  test('6-3-a comparing against the wrong constant fails', () => {
+    const { l, p } = find('6-3-a');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['millis', 'millis', 'stateStart', 'DANGER_CM'] })).status).toBe('fail');
+  });
+  test('6-3-b starter stalls the coolant pump; every bug matters; millis() without the subtraction fails', () => {
+    const { l, p } = find('6-3-b');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('fail');
+    expect(events(v, 'overheat').length).toBe(1);
+    expect(v.shown.reasons.join(' ')).toContain('pumpCoolant');
+    eachBugMatters('6-3-b');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'fix', picks: { 18: 1, 37: 2 } })).status).toBe('fail');
+  });
+  test('6-3-c a blocking delay stalls the pump', () => {
+    const { l, p, code } = sol('6-3-c');
+    const bad = code.replace('if (millis() - stateStart >= BACKUP_MS) {\n        goTo(TURN);\n      }', 'delay(BACKUP_MS);\n      goTo(TURN);');
+    expect(bad).not.toBe(code);
+    const v = runPuzzle(l, p, bad);
+    expect(v.status).toBe('fail');
+    expect(events(v, 'overheat').length).toBeGreaterThan(0);
+  });
+  test('6-4-a lowercase command or a default that keeps driving fails', () => {
+    const { l, p } = find('6-4-a');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['available', 'read', "'f'", 'stopCar'] })).status).toBe('fail');
+    const on = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['available', 'read', "'F'", 'forward'] }));
+    expect(on.status).toBe('fail');
+    expect(events(on, 'crash').length).toBeGreaterThan(0);
+  });
+  test('6-4-b starter warns that Serial was never begun; every bug matters', () => {
+    const { l, p } = find('6-4-b');
+    const v = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(v.status).toBe('fail');
+    expect(v.warnings.map((w) => w.kind)).toContain('noSerialBeginRead');
+    eachBugMatters('6-4-b');
+  });
+  test('6-4-c a timed script without Serial.read is refused', () => {
+    const { l, p, code } = sol('6-4-c');
+    const head = code.slice(0, code.indexOf('char current'));
+    const v = runPuzzle(l, p, head + 'void setup() {\n  forward();\n  delay(1000);\n  spinRight();\n  delay(300);\n  forward();\n  delay(1000);\n  spinLeft();\n  delay(300);\n  forward();\n  delay(500);\n  stopCar();\n}\nvoid loop() {\n}');
+    expect(v.status).toBe('fail');
+  });
+  test('6-5-a || never moves; no bumper crashes into the rock', () => {
+    const { l, p } = find('6-5-a');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['||', '<', "'S'"] })).status).toBe('fail');
+    const v = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['&&', '>', "'S'"] }));
+    expect(v.status).toBe('fail');
+  });
+  test('6-5-b starter drives off the cliff; each layer is needed', () => {
+    const { l, p, code } = sol('6-5-b');
+    const start = runPuzzle(l, p, buildCode(p, initialState(p)));
+    expect(start.status).toBe('fail');
+    expect(events(start, 'fall').length).toBe(1);
+    expect(start.cases[0].reasons.join(' ')).toContain('เหว');
+    const noBumper = code.replace("if (current == 'F' && readDistance() < SAFE_CM) {\n    current = 'S';\n  }", '');
+    expect(noBumper).not.toBe(code);
+    const nb = runPuzzle(l, p, noBumper);
+    expect(nb.status).toBe('fail');
+    expect(events(nb, 'crash').length).toBe(1);
+    const noStamp = code.replace('lastCmd = millis();', '');
+    expect(runPuzzle(l, p, noStamp).status).toBe('fail');
+  });
+  test('enum variables show their name; enum constants stay out of the variable bar', () => {
+    const { l, p, code } = sol('6-1-a');
+    const tr = runPuzzle(l, p, code).shown.result.trace;
+    const vars = tr[tr.length - 1].vars;
+    expect(vars.find((x) => x.name === 'state')).toMatchObject({ type: 'State', text: 'SCAN' });
+    expect(vars.find((x) => x.name === 'CRUISE')).toBeUndefined();
+  });
+  test('millis() in drive mode only advances with delay', () => {
+    const { l, p } = find('6-3-a');
+    const v = runPuzzle(l, p, 'void setup() {\n  Serial.begin(9600);\n  int a = 1;\n  a = a + 1;\n  Serial.println(millis());\n  delay(120);\n  Serial.println(millis());\n}\nvoid loop() {\n}');
+    expect(v.shown.result.serial).toBe('0\n120\n');
+  });
+});

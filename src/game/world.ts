@@ -78,6 +78,14 @@ export class WorldSim implements Host {
   senseCount = 0;
   vaultOpen = false;
   lockedOut = false;
+  wallClock = false;
+  /** เวลาของโลกเกม (ms) = ผลรวมของ delay */
+  now = 0;
+  serialIn?: Host['serialIn'];
+  remotePos = 0;
+  lastFed = 0;
+  overheated = false;
+  fell = false;
 
   constructor(public spec: WorldSpec, public goal: Goal = {}) {
     const m = parseMap(spec.map);
@@ -115,7 +123,27 @@ export class WorldSim implements Host {
     }
     if (spec.vault) this.fns.tryCode = { min: 1, max: 1, ret: 'int' };
     this.pose = { x: b.x, y: b.y, th: { N: 0, E: 90, S: 180, W: 270 }[this.bot.dir] };
+    if (spec.watchdog) this.fns[spec.watchdog.name] = { min: 0, max: 0 };
+    if (spec.remote) {
+      const list = spec.remote;
+      this.serialIn = {
+        available: (now) => {
+          let n = 0;
+          for (let i = this.remotePos; i < list.length && list[i].t <= now; i++) n++;
+          return n;
+        },
+        read: (now, ctx) => {
+          const e = list[this.remotePos];
+          if (!e || e.t > now) return -1;
+          this.remotePos++;
+          ctx.emit({ type: 'remote', c: e.c });
+          return e.c.charCodeAt(0);
+        },
+      };
+    }
     if (spec.drive) {
+      this.wallClock = true;
+      this.fns.atPad = { min: 0, max: 0, ret: 'bool' };
       this.fns.setMotor = { min: 2, max: 2 };
       this.fns.readDistance = { min: 0, max: 0, ret: 'int' };
       for (const f of m.find('F')) this.flagsLeft.add(f.x + ',' + f.y);
@@ -154,6 +182,17 @@ export class WorldSim implements Host {
 
   /** โหมดขับ: เดินเวลา ms ให้รถเคลื่อนที่ตามความเร็วล้อ */
   onDelay(ms: number, ctx: HostCtx): void {
+    this.now += ms;
+    this.driveFor(ms, ctx);
+    const wd = this.spec.watchdog;
+    if (wd && !this.halted && this.now - this.lastFed > wd.maxGap) {
+      this.overheated = true;
+      this.halted = 'overheat';
+      ctx.emit({ type: 'overheat', label: wd.label, gap: this.now - this.lastFed });
+    }
+  }
+
+  private driveFor(ms: number, ctx: HostCtx): void {
     if (!this.spec.drive || this.crashed) return;
     const { l, r } = this.motor;
     if (l === 0 && r === 0) return;
@@ -173,6 +212,11 @@ export class WorldSim implements Host {
         this.crashed = true;
         this.halted = 'crash';
       }
+      if (this.cell(Math.round(this.pose.x), Math.round(this.pose.y)) === 'V') {
+        this.fell = true;
+        this.crashed = true;
+        this.halted = 'fell';
+      }
       const key = Math.round(this.pose.x) + ',' + Math.round(this.pose.y);
       if (this.flagsLeft.delete(key)) {
         const [gx, gy] = key.split(',').map(Number);
@@ -185,7 +229,8 @@ export class WorldSim implements Host {
     this.bot.x = Math.round(this.pose.x);
     this.bot.y = Math.round(this.pose.y);
     ctx.emit({ type: 'drive', x: this.pose.x, y: this.pose.y, th: this.pose.th, ms: ms - left });
-    if (this.crashed) ctx.emit({ type: 'crash' });
+    if (this.fell) ctx.emit({ type: 'fall' });
+    if (this.crashed && !this.fell) ctx.emit({ type: 'crash' });
   }
 
   targetsLeft(): number {
@@ -341,6 +386,9 @@ export class WorldSim implements Host {
         }
         return;
       }
+      case 'atPad':
+        if (!this.spec.drive) break;
+        return this.onPad();
       case 'readDistance': {
         if (!this.spec.drive) break;
         const f = this.frontDistance();
@@ -398,6 +446,11 @@ export class WorldSim implements Host {
         }
         return;
       }
+    }
+    if (this.spec.watchdog?.name === name) {
+      this.lastFed = this.now;
+      ctx.emit({ type: 'pump' });
+      return;
     }
     const feed = this.spec.feeds?.[name];
     if (feed) {

@@ -33,6 +33,11 @@ import { p03 } from './act5/p03';
 import { p04 } from './act5/p04';
 import { p05 } from './act5/p05';
 import { p06 } from './act5/p06';
+import { q01 } from './act6/q01';
+import { q02 } from './act6/q02';
+import { q03 } from './act6/q03';
+import { q04 } from './act6/q04';
+import { q05 } from './act6/q05';
 
 export const LEVELS: Level[] = [
   l01, l02, l03, l04, l05, l06, l07, l08, l09,
@@ -40,6 +45,7 @@ export const LEVELS: Level[] = [
   n01, n02, n03, n04, n05,
   o01, o02, o03, o04, o05, o06,
   p01, p02, p03, p04, p05, p06,
+  q01, q02, q03, q04, q05,
 ];
 
 /** เนื้อเรื่องทั้ง 7 องก์ องก์ที่ยังไม่มีด่านใน LEVELS จะแสดงเป็นด่านล็อกตามชื่อใน planned */
@@ -84,7 +90,7 @@ export const ACTS: ActInfo[] = [
     title: 'หาทางกลับขึ้นไป',
     blurb: 'ซ่อมกระสวยเก่า ตั้งโปรแกรมนำร่อง แล้วบังคับจากระยะไกล',
     teaches: 'state machine: enum + switch + millis() · รับคำสั่งทาง Serial',
-    planned: ['ตั้งชื่อสถานะ', 'สมองแบบสถานะ', 'ไม่หยุดรอ', 'รีโมตจากพื้นดิน', 'ระบบกันชน'],
+    planned: [],
   },
   {
     n: 7,

@@ -127,6 +127,7 @@ export function specFor(level: Level, p: Puzzle, c?: Case): WorldSpec {
     inputs: c.inputs ?? base.inputs,
     feeds: c.feeds ? { ...(base.feeds ?? {}), ...c.feeds } : base.feeds,
     vault: c.vault ?? base.vault,
+    remote: c.remote ?? base.remote,
     aliens: c.aliens ?? (typeof c.sensors?.scanAliens === 'number' ? c.sensors.scanAliens : base.aliens),
     targets: c.targets ?? base.targets,
     shield: c.shield ?? base.shield,
@@ -182,8 +183,13 @@ function judge(goal: Goal, sim: WorldSim, res: RunResult): string[] {
     if (twice) out.push(`มีแผงที่ถูกสั่งเปิดซ้ำ ${twice} ช่อง`);
     if (sim.badCell) out.push(`สั่ง powerCell นอกตาราง: แถวต้องเป็น 0 ถึง ${g.rows - 1} และช่องต้องเป็น 0 ถึง ${g.cols - 1}`);
   }
-  if (sim.crashed) out.push('บิตชนสิ่งกีดขวาง! ลองดูว่ารถวิ่งนานเกินไป เลี้ยวผิดทาง หรือหยุดช้าไป');
-  if (sim.spec.drive && !sim.crashed) {
+  if (sim.fell) out.push('ตกเหว! เซนเซอร์วัดระยะมองไม่เห็นเหว โปรแกรมต้องหยุดรถเองให้ทัน');
+  else if (sim.crashed) out.push('บิตชนสิ่งกีดขวาง! ลองดูว่ารถวิ่งนานเกินไป เลี้ยวผิดทาง หรือหยุดช้าไป');
+  if (sim.overheated) {
+    const wd = sim.spec.watchdog!;
+    out.push(`${wd.label}หยุดทำงาน! ต้องเรียก ${wd.name}() ห่างกันไม่เกิน ${wd.maxGap} ms แต่โปรแกรมหยุดรอนานเกินไป (ดูว่ามี delay ยาวอยู่ตรงไหน)`);
+  }
+  if (sim.spec.drive && !sim.crashed && !sim.overheated) {
     const on = sim.motor.l !== 0 || sim.motor.r !== 0;
     if (goal.stopped && on) out.push('จบโปรแกรมแล้วมอเตอร์ยังหมุนอยู่ รถจะวิ่งต่อไปเรื่อย ๆ ต้องสั่งหยุดด้วย setMotor(0, 0);');
     if (goal.flags && sim.flagsLeft.size) out.push(`ยังไม่ได้ผ่านธงอีก ${sim.flagsLeft.size} จุด`);
@@ -215,7 +221,7 @@ function judge(goal: Goal, sim: WorldSim, res: RunResult): string[] {
   }
   if (goal.at) {
     const ok = goal.at === 'pad' ? sim.onPad() : sim.bot.x === goal.at[0] && sim.bot.y === goal.at[1];
-    if (!ok && !sim.bumped) out.push(goal.at === 'pad' ? 'บิตยังไปไม่ถึงแผ่นเหยียบสีเขียว' : 'บิตยังไปไม่ถึงจุดหมาย');
+    if (!ok && !sim.bumped && !sim.overheated && !sim.fell) out.push(goal.at === 'pad' ? 'บิตยังไปไม่ถึงแผ่นเหยียบสีเขียว' : 'บิตยังไปไม่ถึงจุดหมาย');
   }
   if (goal.door && sim.door !== goal.door && !sim.caught && !sim.bumped) {
     const want = { open: 'ต้องเปิด', closed: 'ต้องปิดอยู่ (ไม่ต้องล็อก)', locked: 'ต้องถูกล็อก' }[goal.door];
@@ -267,7 +273,7 @@ export function runPuzzle(level: Level, p: Puzzle, code: string): Verdict {
       return { status: 'compile', compileError: result.compileError, shown: run, cases: [run], warnings: [], code };
     }
     const reasons = judge(goal, sim, result);
-    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped || sim.hostageHit || sim.clampJam || sim.chuteTorn || sim.lockedOut || sim.crashed });
+    runs.push({ index: i, label: c.label, spec, goal, result, reasons, pass: reasons.length === 0, drama: sim.caught || sim.bumped || sim.hostageHit || sim.clampJam || sim.chuteTorn || sim.lockedOut || sim.crashed || sim.overheated });
   }
   const firstFail = runs.find((r) => !r.pass && r.drama) ?? runs.find((r) => !r.pass);
   const shown = firstFail ?? runs[0];

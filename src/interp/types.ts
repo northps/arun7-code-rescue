@@ -48,6 +48,10 @@ export interface Host {
   halted?: string | null;
   /** เรียกทุกครั้งที่โปรแกรมสั่ง delay(ms): ให้โลกเกมเดินเวลา (เช่น รถวิ่งต่อ) */
   onDelay?(ms: number, ctx: HostCtx): void;
+  /** true = เวลาของ millis() เดินเฉพาะตอน delay (ตรงกับเวลาที่โลกเกมเคลื่อนที่) */
+  wallClock?: boolean;
+  /** ตัวอักษรที่ส่งเข้ามาทาง Serial ตามเวลา (รีโมต): ใช้แทน Serial.available() / Serial.read() */
+  serialIn?: { available(now: number): number; read(now: number, ctx: HostCtx): number };
   /** ค่าที่ผู้เล่น "พิมพ์" เข้ามาทาง Serial (ใช้กับ readNumber) */
   inputs?: number[];
 }

@@ -589,6 +589,9 @@ export class PlayScreen {
     const trace = run.result.trace;
     const driving = !!run.spec.drive;
     const limit = !driving && trace.length > 140 ? 45 : trace.length;
+    // trace ของโหมดขับที่ยาวมาก: ย่อเวลาให้ทั้งการรันจบในราว 12 วินาที
+    const rawMs = trace.length * 24 + trace.reduce((s, t) => s + Math.min(t.wait * 0.5, 2000), 0);
+    const squeeze = driving && trace.length > 60 ? Math.min(1, 12000 / rawMs) : 1;
     let serial = '';
     for (let i = 0; i < limit; i++) {
       if (id !== this.playId) return;
@@ -606,7 +609,7 @@ export class PlayScreen {
       }
       this.setOverlays(step.vars, serial);
       const pause = limit < trace.length ? 60 : driving ? (trace.length > 60 ? 24 : 180) : 360;
-      await sleep(pause * speed() + Math.min(step.wait * 0.5, 2000) * speed());
+      await sleep((pause * speed() + Math.min(step.wait * 0.5, 2000) * speed()) * squeeze);
     }
     if (id !== this.playId) return;
     this.setRun(false);

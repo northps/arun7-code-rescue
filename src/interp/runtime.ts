@@ -10,6 +10,11 @@ interface Var {
   arr?: (number | string | boolean)[];
   isConst: boolean;
   init: boolean;
+  /** ค่าคงที่ของ enum: ไม่แสดงในแถบตัวแปร */
+  hidden?: boolean;
+  /** ตัวแปรชนิด enum: ชื่อชนิดและชื่อของแต่ละค่า */
+  enumType?: string;
+  enumNames?: string[];
 }
 
 class BreakSig {}
@@ -113,7 +118,7 @@ export class Runtime {
   }
   tick(): void {
     this.ticks++;
-    this.clock += 1;
+    if (!this.host.wallClock) this.clock += 1;
     if (this.steps > this.maxSteps || this.ticks > this.maxSteps * 5) {
       throw new RuntimeErr({ kind: 'infinite', line: this.line, th: RUNTIME.infinite({}) });
     }
@@ -137,8 +142,10 @@ export class Runtime {
   snapshot(): VarView[] {
     const out: VarView[] = [];
     const add = (name: string, v: Var, global: boolean) => {
-      const type = (v.isConst ? 'const ' : '') + (TYPE_LABEL[v.type] ?? v.type);
-      const text = v.arr
+      if (v.hidden) return;
+      const type = (v.isConst ? 'const ' : '') + (v.enumType ?? TYPE_LABEL[v.type] ?? v.type);
+      const named = v.enumNames && !v.arr && v.init ? v.enumNames[v.v as number] : undefined;
+      const text = named ? named : v.arr
         ? '{' + v.arr.map((x) => showRaw(v.type, x)).join(', ') + '}'
         : v.init
           ? showRaw(v.type, v.v)
@@ -462,6 +469,13 @@ export class Runtime {
           this.print(String.fromCharCode(this.num(args[0])));
           return { t: 'void', v: 0 };
         case 'available': {
+          if (this.host.serialIn) {
+            if (!this.serialBegun) {
+              this.warnRaw('noSerialBeginRead', 'เรียก Serial.available() โดยยังไม่ได้สั่ง Serial.begin(9600); ใน setup() บอร์ดจึงไม่ได้รับตัวอักษรอะไรเลย');
+              return { t: 'int', v: 0 };
+            }
+            return { t: 'int', v: this.host.serialIn.available(this.clock) };
+          }
           if (this.inputBuf) return { t: 'int', v: 1 };
           const inputs = this.host.inputs ?? [];
           if (inputs.length) {
@@ -482,6 +496,10 @@ export class Runtime {
           return { t: 'long', v: this.inputBuf!.n };
         }
         case 'read':
+          if (this.host.serialIn) {
+            this.ctx.line = this.line;
+            return { t: 'int', v: this.serialBegun ? this.host.serialIn.read(this.clock, this.ctx) : -1 };
+          }
           if (this.inputBuf) {
             this.inputBuf = null;
             return { t: 'int', v: 10 };
@@ -669,6 +687,11 @@ export class Runtime {
   declare(s: Extract<Stmt, { k: 'decl' }>): void {
     for (const it of s.items) {
       const v: Var = { type: s.type, v: s.type === 'String' ? '' : s.type === 'bool' ? false : 0, isConst: s.isConst, init: false };
+      if (s.enumDef) v.hidden = true;
+      if (s.enumType) {
+        v.enumType = s.enumType;
+        v.enumNames = s.enumNames;
+      }
       if (it.isArray) {
         if (it.init && it.init.k === 'str') {
           v.type = 'String';

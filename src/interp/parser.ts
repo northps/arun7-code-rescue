@@ -29,7 +29,7 @@ export interface DeclItem {
 }
 
 export type Stmt =
-  | { k: 'decl'; type: VType; isConst: boolean; items: DeclItem[]; line: number }
+  | { k: 'decl'; type: VType; isConst: boolean; items: DeclItem[]; line: number; enumType?: string; enumNames?: string[]; enumDef?: boolean }
   | { k: 'expr'; e: Expr; line: number }
   | { k: 'block'; body: Stmt[]; line: number }
   | { k: 'if'; cond: Expr; then: Stmt; else?: Stmt; emptyThen: boolean; line: number }
@@ -83,6 +83,8 @@ export const KEYWORDS = new Set([
 class Parser {
   i = 0;
   enumTypes = new Set<string>();
+  enumItems = new Map<string, string[]>();
+  lastEnum: string | null = null;
   constructor(public toks: Tok[]) {}
 
   get tok(): Tok {
@@ -146,6 +148,7 @@ class Parser {
     }
     const t = this.tok;
     let type: VType;
+    this.lastEnum = null;
     if (t.t === 'id' && t.v in BASE_TYPES) {
       type = BASE_TYPES[t.v];
       this.i++;
@@ -153,6 +156,7 @@ class Parser {
       if (this.is('int') && (type === 'long' || type === 'int')) this.i++;
     } else if (t.t === 'id' && this.enumTypes.has(t.v)) {
       type = 'int';
+      this.lastEnum = t.v;
       this.i++;
     } else if (unsigned) {
       type = 'int';
@@ -215,7 +219,9 @@ class Parser {
   parseEnum(): Stmt {
     const line = this.tok.line;
     this.expect('enum');
+    let enumName: string | null = null;
     if (this.tok.t === 'id' && !this.is('{')) {
+      enumName = this.tok.v;
       this.enumTypes.add(this.tok.v);
       this.i++;
     }
@@ -237,7 +243,8 @@ class Parser {
     }
     this.expect('}');
     this.expect(';');
-    return { k: 'decl', type: 'int', isConst: true, items, line };
+    if (enumName) this.enumItems.set(enumName, items.map((x) => x.name));
+    return { k: 'decl', type: 'int', isConst: true, items, line, enumDef: true };
   }
 
   parseFunc(ret: VType, nameTok: Tok): Func {
@@ -315,6 +322,7 @@ class Parser {
   }
 
   parseDeclRest(type: VType, isConst: boolean, line: number): Stmt {
+    const enumType = this.lastEnum ?? undefined;
     const items: DeclItem[] = [];
     for (;;) {
       const n = this.tok;
@@ -352,7 +360,7 @@ class Parser {
       });
     }
     this.expect(';');
-    return { k: 'decl', type, isConst, items, line };
+    return { k: 'decl', type, isConst, items, line, enumType, enumNames: enumType ? this.enumItems.get(enumType) : undefined };
   }
 
   // ---------- คำสั่ง ----------

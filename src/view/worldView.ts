@@ -104,6 +104,8 @@ export class WorldView {
   flags: { key: string; mat: THREE.MeshStandardMaterial }[] = [];
   beam: THREE.Mesh | null = null;
   lastSenseLabel = 0;
+  lastRemote = '';
+  lastRemoteAt = 0;
   motorsOn = false;
   calm = false;
   hemi = new THREE.HemisphereLight(0x8fb4ff, 0x0c1018, 0.75);
@@ -308,6 +310,17 @@ export class WorldView {
     for (const c of m.cells) {
       if (c.ch === ' ') continue;
       const p = this.cellPos(c.x, c.y);
+      if (c.ch === 'V') {
+        // เหว: ไม่มีพื้น มีขอบเตือนสีแดง
+        const hole = new THREE.Mesh(new THREE.BoxGeometry(1, 0.04, 1), new THREE.MeshBasicMaterial({ color: 0x020304 }));
+        hole.position.set(p.x, -0.6, p.z);
+        this.root.add(hole);
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.02, 6, 4), glow(C.red, 1.6));
+        rim.rotation.set(Math.PI / 2, 0, Math.PI / 4);
+        rim.position.set(p.x, 0.0, p.z);
+        this.root.add(rim);
+        continue;
+      }
       // พื้น
       const under = new THREE.Mesh(new THREE.BoxGeometry(1, 0.08, 1), seam);
       under.position.set(p.x, -0.07, p.z);
@@ -1023,6 +1036,34 @@ export class WorldView {
       }
     }
     g.add(bodyGroup);
+    if (this.spec?.vehicle === 'shuttle') {
+      // กระสวย: ลำตัวแบน ปีกสั้น หางตั้ง เครื่องยนต์ท้าย บิตนั่งอยู่ตรงกลาง
+      const hullMat = std(0xd9dee6, { metalness: 0.35, roughness: 0.45 });
+      const wingMat = std(C.orange, { metalness: 0.3, roughness: 0.45 });
+      const hull = new THREE.Mesh(new RoundedBoxGeometry(0.66, 0.16, 0.98, 3, 0.07), hullMat);
+      hull.position.set(0, 0.15, -0.04);
+      hull.castShadow = true;
+      g.add(hull);
+      const nose = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.3, 14), hullMat);
+      nose.rotation.x = Math.PI / 2;
+      nose.scale.set(1.5, 1, 0.4);
+      nose.position.set(0, 0.15, 0.56);
+      g.add(nose);
+      for (const ex of [-0.38, 0.38]) {
+        const wing = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.04, 0.42), wingMat);
+        wing.position.set(ex, 0.13, -0.26);
+        g.add(wing);
+      }
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.3, 0.24), wingMat);
+      fin.position.set(0, 0.36, -0.46);
+      g.add(fin);
+      for (const ex of [-0.16, 0.16]) {
+        const eng = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.085, 0.14, 12), glow(C.cyan, 1.6));
+        eng.rotation.x = Math.PI / 2;
+        eng.position.set(ex, 0.16, -0.56);
+        g.add(eng);
+      }
+    }
     const under = new THREE.PointLight(C.cyan, 0.5, 2.2, 2);
     under.position.set(0, 0.25, 0.3);
     g.add(under);
@@ -1249,6 +1290,34 @@ export class WorldView {
           () => this.moving--,
         );
         return 0;
+      }
+      case 'remote': {
+        const now = this.clock.elapsedTime;
+        if (ev.c !== this.lastRemote || now - this.lastRemoteAt > 1.2) {
+          this.lastRemote = ev.c as string;
+          this.lastRemoteAt = now;
+          this.floatText(`\u{1F4E1} '${ev.c}'`, this.bot.position.clone().setY(1.75), '#ffd166');
+        }
+        return 0;
+      }
+      case 'pump':
+        return 0;
+      case 'overheat': {
+        this.burst(this.bot.position.clone().setY(0.5), C.red, 24);
+        this.floatText(`${ev.label}หยุด!`, this.bot.position.clone().setY(1.45), '#ff5566');
+        this.setMood('fail');
+        this.flash('red');
+        return 600;
+      }
+      case 'fall': {
+        const y0 = this.bot.position.y;
+        this.floatText('ตกเหว!', this.bot.position.clone().setY(1.45), '#ff5566');
+        this.tween(600, (k) => {
+          this.bot.position.y = y0 - 2.2 * k * k;
+        });
+        this.setMood('fail');
+        this.flash('red');
+        return 700;
       }
       case 'crash': {
         this.burst(this.bot.position.clone().setY(0.5), C.amber, 22);

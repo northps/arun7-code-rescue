@@ -26,7 +26,7 @@ export interface WorldSpec {
    * แผนที่ห้อง แถวบนสุดคือทิศเหนือ
    * '#' ผนัง  '.' พื้น  ' ' ว่าง  'B' บิต  'D' ประตู  'P' แผ่นเหยียบเปิดประตู
    * 'T' แผงควบคุม  'L' โคมไฟ  'A' ที่ยืนของเคลธ  'X' ลัง  'G' ยานกู้ชีพ  'W' หน้าต่าง  'U' ป้อมปืน
-   * 'S' ชั้นวางอาร์เรย์ (ใช้คู่กับ shelf)  'F' ธงจุดตรวจ (ใช้กับ drive)
+   * 'S' ชั้นวางอาร์เรย์ (ใช้คู่กับ shelf)  'F' ธงจุดตรวจ (ใช้กับ drive)  'V' เหว (ใช้กับ drive: เซนเซอร์วัดระยะมองไม่เห็น ขับเข้าไป = ตก)
    */
   map: string[];
   dir?: Dir;
@@ -52,6 +52,15 @@ export interface WorldSpec {
    * cm = ความกว้างของ 1 ช่องเป็นเซนติเมตร (ปกติ 80) · noise = ค่าที่บวกเข้ากับ readDistance() แต่ละครั้ง ตามลำดับ
    */
   drive?: { cm?: number; noise?: number[] };
+  /**
+   * รีโมต (องก์ 6): ตัวอักษรที่ส่งเข้ามาทาง Serial ตามเวลา (ms นับจากเริ่มรัน) อ่านด้วย Serial.available() / Serial.read()
+   * เวลาในโหมดขับเดินเฉพาะตอน delay
+   */
+  remote?: { t: number; c: string }[];
+  /** คำสั่งที่ต้องเรียกซ้ำไม่ให้ห่างกันเกิน maxGap ms (เช่น ปั๊มหล่อเย็น) ห่างเกิน = เครื่องดับ */
+  watchdog?: { name: string; maxGap: number; label: string };
+  /** รูปร่างของตัวที่ขับ: 'shuttle' = บิตนั่งในกระสวย */
+  vehicle?: 'shuttle';
   /** หน้าตาของฉาก: ไม่ใส่ = ในยาน, 'planet' = ซากสถานีบนดาวเวฬา */
   theme?: 'planet';
   /** ค่าที่ readNumber() จะได้ ตามลำดับ */
@@ -121,6 +130,7 @@ export interface Case {
   inputs?: number[];
   feeds?: Record<string, number[]>;
   vault?: { secret: number; tries: number };
+  remote?: { t: number; c: string }[];
   aliens?: number;
   targets?: number;
   shield?: number;
