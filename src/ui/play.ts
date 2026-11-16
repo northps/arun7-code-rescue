@@ -1,6 +1,6 @@
 // หน้าเล่นด่าน: ฉาก 3D + ตัวแก้โค้ด 4 แบบ + เล่นรอยการทำงานทีละบรรทัด
 import { Diag, VarView } from '../interp';
-import { buildCode, initialState, isComplete, PuzzleState, runPuzzle, specFor, Verdict } from '../game/judge';
+import { buildCode, initialState, isComplete, PuzzleState, runPuzzle, specFor, typedStarter, Verdict } from '../game/judge';
 import { levelStars, loadProgress, saveProgress, setStars, starsFor } from '../game/progress';
 import { Level, LessonBlock, Puzzle } from '../game/types';
 import { WorldView } from '../view/worldView';
@@ -12,6 +12,13 @@ const KIND_LABEL: Record<Puzzle['kind'], string> = {
   order: 'เรียงบรรทัด',
   fix: 'หาที่ผิด',
   type: 'พิมพ์โค้ดเอง',
+};
+
+const TYPED_NOTE: Record<Puzzle['kind'], string> = {
+  blank: 'โหมดพิมพ์เอง: พิมพ์โค้ดแทน ___ ทุกจุด',
+  order: 'โหมดพิมพ์เอง: ย้ายหรือพิมพ์บรรทัดใหม่ให้ลำดับถูก',
+  fix: 'โหมดพิมพ์เอง: รันดู error แล้วแก้โค้ดเองโดยตรง',
+  type: '',
 };
 
 const KEYS = [';', '(', ')', '{', '}', '=', '==', '"', "'", '<', '>', '+', '-', '*', '/', '%', '!', '&&', '||', ',', '_', '.'];
@@ -70,6 +77,11 @@ export class PlayScreen {
     return this.level.puzzles[this.pi];
   }
 
+  /** โค้ดที่ค้างไว้แยกตามโหมด (แตะเลือก / พิมพ์เอง) */
+  private draftKey(): string {
+    return this.p.id + (loadProgress().typeMode && this.p.kind !== 'type' ? ':typed' : '');
+  }
+
   destroy(): void {
     this.playId++;
     this.ro.disconnect();
@@ -95,6 +107,16 @@ export class PlayScreen {
       saveProgress();
       speedBtn.textContent = prog.fast ? '⏩ เร็ว' : '▷ ปกติ';
     } }, prog.fast ? '⏩ เร็ว' : '▷ ปกติ');
+    const typeBtn = h('button', { class: 'tog' + (prog.typeMode ? ' on' : ''), title: 'โหมดพิมพ์เอง', 'aria-pressed': String(prog.typeMode), onclick: () => {
+      prog.typeMode = !prog.typeMode;
+      saveProgress();
+      typeBtn.classList.toggle('on', prog.typeMode);
+      typeBtn.setAttribute('aria-pressed', String(prog.typeMode));
+      const fails = this.failedRuns, hints = this.hintsUsed;
+      this.loadPuzzle(this.pi);
+      this.failedRuns = fails;
+      this.hintsUsed = hints;
+    } }, '⌨ พิมพ์เอง');
     const soundBtn = h('button', { class: 'icon', title: 'เสียง', onclick: () => {
       prog.sound = !prog.sound;
       saveProgress();
@@ -109,6 +131,7 @@ export class PlayScreen {
         { class: 'bar' },
         h('button', { class: 'icon', title: 'กลับแผนที่', onclick: () => this.nav.toMap() }, '‹'),
         this.headEl,
+        typeBtn,
         h('button', { class: 'icon', title: 'บทเรียน', onclick: () => this.showLesson(false) }, '📖'),
         soundBtn,
       ),
@@ -139,7 +162,8 @@ export class PlayScreen {
     this.playing = false;
     this.pi = i;
     const p = this.p;
-    this.state = drafts.get(p.id) ?? initialState(p);
+    const typed = loadProgress().typeMode && p.kind !== 'type';
+    this.state = drafts.get(this.draftKey()) ?? (typed ? { kind: 'type', text: typedStarter(p) } : initialState(p));
     this.failedRuns = 0;
     this.hintsUsed = 0;
     this.selSlot = 0;
@@ -154,9 +178,9 @@ export class PlayScreen {
         .map((q, k) => `<i class="${k === i ? 'on' : (loadProgress().stars[q.id] ?? 0) > 0 ? 'done' : ''}"></i>`)
         .join('')}</span>`;
     this.missionEl.innerHTML =
-      `<div class="mission-top"><span class="kind k-${p.kind}">${KIND_LABEL[p.kind]}</span><b>${esc(p.title)}</b>` +
+      `<div class="mission-top"><span class="kind k-${typed ? 'type' : p.kind}">${typed ? 'พิมพ์โค้ดเอง' : KIND_LABEL[p.kind]}</span><b>${esc(p.title)}</b>` +
       (done ? `<span class="got">${'★'.repeat(done)}</span>` : '') +
-      `</div><p>${rich(p.mission)}</p>`;
+      `</div><p>${rich(p.mission)}${typed ? '<br><i class="typed-note">' + TYPED_NOTE[p.kind] + '</i>' : ''}</p>`;
     this.hideFeed();
     this.view.load(specFor(this.level, p, p.cases?.[0]));
     this.setOverlays([], '', p.cases?.length ? `ทดสอบ ${p.cases.length} กรณี` : '');
@@ -190,7 +214,7 @@ export class PlayScreen {
     const s = this.state;
     this.codeEl.replaceChildren();
     this.textarea = null;
-    this.codeEl.classList.toggle('editing', p.kind === 'type' && this.editing);
+    this.codeEl.classList.toggle('editing', s.kind === 'type' && this.editing);
 
     if (p.kind === 'blank' && s.kind === 'blank') {
       p.code.split('\n').forEach((line, i) => {
@@ -262,7 +286,7 @@ export class PlayScreen {
       return;
     }
 
-    if (p.kind === 'type' && s.kind === 'type') {
+    if (s.kind === 'type') {
       if (this.editing) {
         const ta = h('textarea', {
           class: 'editor',
@@ -276,7 +300,7 @@ export class PlayScreen {
         ta.rows = Math.max(8, s.text.split('\n').length + 1);
         ta.addEventListener('input', () => {
           s.text = ta.value;
-          drafts.set(p.id, s);
+          drafts.set(this.draftKey(), s);
           ta.rows = Math.max(8, ta.value.split('\n').length + 1);
         });
         ta.addEventListener('keydown', (e) => this.onEditorKey(e, ta));
@@ -327,7 +351,7 @@ export class PlayScreen {
   }
 
   private edit(): void {
-    if (this.playing || this.p.kind !== 'type') return;
+    if (this.playing || this.state.kind !== 'type') return;
     this.editing = true;
     this.curLine = null;
     this.renderCode();
@@ -340,7 +364,7 @@ export class PlayScreen {
     const p = this.p;
     const s = this.state;
     this.bankEl.replaceChildren();
-    this.bankEl.className = 'bank b-' + p.kind;
+    this.bankEl.className = 'bank b-' + s.kind;
 
     if (p.kind === 'blank' && s.kind === 'blank') {
       for (const tok of p.bank) {
@@ -407,7 +431,7 @@ export class PlayScreen {
       });
       return;
     }
-    if (p.kind === 'type') {
+    if (s.kind === 'type') {
       if (!this.editing) {
         this.bankEl.append(h('button', { class: 'btn wide', onclick: () => this.edit() }, '✎ แก้โค้ด'));
         return;
@@ -485,7 +509,7 @@ export class PlayScreen {
 
   private onReset(): void {
     this.playId++;
-    drafts.delete(this.p.id);
+    drafts.delete(this.draftKey());
     const fails = this.failedRuns, hints = this.hintsUsed;
     this.loadPuzzle(this.pi);
     this.failedRuns = fails;
@@ -512,7 +536,7 @@ export class PlayScreen {
     this.hideFeed();
     this.errLine = null;
     this.selLine = null;
-    if (p.kind === 'type') this.editing = false;
+    if (this.state.kind === 'type') this.editing = false;
 
     if (v.status === 'compile' && v.compileError) {
       const e = v.compileError;
@@ -592,7 +616,7 @@ export class PlayScreen {
       sfx.win();
       const stars = starsFor(this.failedRuns, this.hintsUsed);
       setStars(p.id, stars);
-      drafts.delete(p.id);
+      drafts.delete(this.draftKey());
       await sleep(900);
       if (id !== this.playId) return;
       this.showWin(stars, v);

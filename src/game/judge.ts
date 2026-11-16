@@ -26,7 +26,7 @@ export function initialState(p: Puzzle): PuzzleState {
     case 'blank':
       return { kind: 'blank', slots: Array(slotCount(p.code)).fill(null) };
     case 'order':
-      return { kind: 'order', order: p.start ? [...p.start] : scramble(p.lines.length) };
+      return { kind: 'order', order: initialOrder(p) };
     case 'fix':
       return { kind: 'fix', picks: {} };
     case 'type':
@@ -50,7 +50,26 @@ export function solutionState(p: Puzzle): PuzzleState {
   }
 }
 
+/** โค้ดตั้งต้นของโหมดพิมพ์เอง: โจทย์ทุกชนิดกลายเป็นข้อความให้แก้ */
+export function typedStarter(p: Puzzle): string {
+  switch (p.kind) {
+    case 'blank':
+      return p.code.replace(/\{\{\d+\}\}/g, '___');
+    case 'order':
+      return [p.head, ...initialOrder(p).map((i) => p.lines[i]), p.tail].join('\n');
+    case 'fix':
+      return p.code;
+    case 'type':
+      return p.starter;
+  }
+}
+
+function initialOrder(p: Extract<Puzzle, { kind: 'order' }>): number[] {
+  return p.start ? [...p.start] : scramble(p.lines.length);
+}
+
 export function buildCode(p: Puzzle, s: PuzzleState): string {
+  if (s.kind === 'type') return s.text;
   if (p.kind === 'blank' && s.kind === 'blank') {
     return p.code.replace(/\{\{(\d+)\}\}/g, (_, i) => s.slots[Number(i)] ?? '');
   }
@@ -68,7 +87,6 @@ export function buildCode(p: Puzzle, s: PuzzleState): string {
       })
       .join('\n');
   }
-  if (p.kind === 'type' && s.kind === 'type') return s.text;
   return '';
 }
 

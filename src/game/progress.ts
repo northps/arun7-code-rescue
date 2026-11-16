@@ -10,10 +10,12 @@ export interface Progress {
   seen: Record<string, boolean>;
   sound: boolean;
   fast: boolean;
+  /** โหมดพิมพ์เอง: ทุกโจทย์ให้พิมพ์โค้ดแทนการแตะเลือก */
+  typeMode: boolean;
 }
 
 function blank(): Progress {
-  return { stars: {}, seen: {}, sound: true, fast: false };
+  return { stars: {}, seen: {}, sound: true, fast: false, typeMode: false };
 }
 
 let cache: Progress | null = null;
