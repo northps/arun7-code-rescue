@@ -1301,6 +1301,7 @@ export class WorldView {
         return 0;
       }
       case 'pump':
+      case 'see':
         return 0;
       case 'overheat': {
         this.burst(this.bot.position.clone().setY(0.5), C.red, 24);

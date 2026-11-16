@@ -582,3 +582,89 @@ describe('องก์ 6: ผลของโค้ดที่ผิด', () => 
     expect(v.shown.result.serial).toBe('0\n120\n');
   });
 });
+
+describe('องก์ 7: ผลของโค้ดที่ผิด และคำตอบแบบอื่น', () => {
+  const find = (id: string) => {
+    for (const l of LEVELS) for (const p of l.puzzles) if (p.id === id) return { l, p };
+    throw new Error(id);
+  };
+  const events = (v: ReturnType<typeof runPuzzle>, type: string) =>
+    v.cases.flatMap((c) => c.result.trace.flatMap((s) => s.events.filter((e) => e.type === type)));
+  const sol = (id: string) => {
+    const { l, p } = find(id);
+    return { l, p, code: buildCode(p, solutionState(p)) };
+  };
+  const swap = (code: string, a: string, b: string) => {
+    expect(code).toContain(a);
+    return code.replace(a, b);
+  };
+
+  test('7-1-a wrong comparison or if instead of while stops too far', () => {
+    const { l, p } = find('7-1-a');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['while', '<', 'stopCar'] })).status).toBe('fail');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['if', '>', 'stopCar'] })).status).toBe('fail');
+  });
+  test('7-1-b fast only misses the mark; slow only is too slow', () => {
+    const { l, p, code } = sol('7-1-b');
+    const head = code.slice(0, code.indexOf('void dock()'));
+    const tail = '\nvoid setup() {\n  dock();\n}\nvoid loop() {\n}';
+    const fast = runPuzzle(l, p, head + 'void dock() {\n  while (readDistance() > STOP_CM) {\n    cruise();\n    delay(50);\n  }\n  stopCar();\n}' + tail);
+    expect(fast.status).toBe('fail');
+    const slow = runPuzzle(l, p, head + 'void dock() {\n  while (readDistance() > STOP_CM) {\n    creep();\n    delay(50);\n  }\n  stopCar();\n}' + tail);
+    expect(slow.status).toBe('fail');
+    expect(slow.shown.reasons.join(' ')).toContain('ช้าเกินไป');
+  });
+  test('7-2-a short loop or reversed test gives the wrong sequence', () => {
+    const { l, p } = find('7-2-a');
+    const short = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['4', 'i', '<', 'i'] }));
+    expect(short.status).toBe('fail');
+    expect(short.shown.reasons.join(' ')).toContain('ลำดับของ startSystem()');
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['5', 'i', '>', 'i'] })).status).toBe('fail');
+  });
+  test('7-2-b ignoring the priority order fails', () => {
+    const { l, p, code } = sol('7-2-b');
+    expect(runPuzzle(l, p, swap(code, 'int id = order[i];', 'int id = i;')).status).toBe('fail');
+  });
+  test('7-3-a driving into a Kleth crashes; never leaving FIGHT fails', () => {
+    const { l, p } = find('7-3-a');
+    const ram = runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['seeKleth', 'CRUISE', 'fire', 'CRUISE'] }));
+    expect(ram.status).toBe('fail');
+    expect(events(ram, 'crash').length).toBeGreaterThan(0);
+    expect(runPuzzle(l, p, buildCode(p, { kind: 'blank', slots: ['seeKleth', 'FIGHT', 'fire', 'FIGHT'] })).status).toBe('fail');
+  });
+  test('7-3-b firing every loop wastes shots; checking distance before the Kleth fails', () => {
+    const { l, p, code } = sol('7-3-b');
+    const spray = runPuzzle(l, p, swap(code, '      forward();\n', '      forward();\n      fire();\n'));
+    expect(spray.status).toBe('fail');
+    expect(spray.shown.reasons.join(' ')).toContain('ยิงพลาด');
+    const order = code
+      .replace('} else if (seeKleth()) {\n        goTo(FIGHT);\n      } else if (readDistance() < DANGER_CM) {\n        goTo(TURN);', '} else if (readDistance() < DANGER_CM) {\n        goTo(TURN);\n      } else if (seeKleth()) {\n        goTo(FIGHT);');
+    expect(order).not.toBe(code);
+    expect(runPuzzle(l, p, order).status).toBe('fail'); // เคลธที่ยืนติดมุมถูกมองเป็นผนัง บิตจึงเลี้ยวหนี
+  });
+  test('7-4-a summing every rune gives the wrong code', () => {
+    const { l, p, code } = sol('7-4-a');
+    const v = runPuzzle(l, p, swap(code, 'if (r > 0) {', 'if (r != 0) {'));
+    expect(v.status).toBe('fail');
+    expect(v.shown.reasons.join(' ')).toContain('closePortal()');
+  });
+  test('7-4-b other designs pass too: plain if / else with a blocking turn, and a separate SEND state', () => {
+    const { l, p, code } = sol('7-4-b');
+    const head = code.slice(0, code.indexOf('enum State'));
+    const fn = code.slice(code.indexOf('int portalCode()'), code.indexOf('void setup()'));
+    const plain = head + fn + 'void turnRight() {\n  setMotor(150, -150);\n  delay(TURN_MS);\n  stopCar();\n}\nvoid setup() {\n}\nvoid loop() {\n  if (atPad()) {\n    stopCar();\n    closePortal(portalCode());\n  } else if (seeKleth()) {\n    stopCar();\n    fire();\n  } else if (readDistance() < DANGER_CM) {\n    stopCar();\n    turnRight();\n  } else {\n    forward();\n  }\n  delay(50);\n}';
+    const a = runPuzzle(l, p, plain);
+    expect(`${a.status} ${a.shown.reasons.join('|')}`).toBe('pass ');
+    const two = code
+      .replace('enum State { CRUISE, FIGHT, TURN, PARK };', 'enum State { CRUISE, FIGHT, TURN, PARK, SEND };')
+      .replace('      stopCar();\n      closePortal(portalCode());\n      break;', '      stopCar();\n      goTo(SEND);\n      break;\n    case SEND:\n      closePortal(portalCode());\n      break;');
+    expect(two).not.toBe(code);
+    const b = runPuzzle(l, p, two);
+    expect(`${b.status} ${b.shown.reasons.join('|')}`).toBe('pass ');
+  });
+  test('7-4-b reaching the console without the code, or with a Kleth left, fails', () => {
+    const { l, p, code } = sol('7-4-b');
+    expect(runPuzzle(l, p, swap(code, 'closePortal(portalCode());', 'closePortal(49);')).status).toBe('fail');
+    expect(runPuzzle(l, p, swap(code, '        fire();', '        delay(1);')).status).toBe('fail');
+  });
+});

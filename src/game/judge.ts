@@ -250,6 +250,16 @@ function judge(goal: Goal, sim: WorldSim, res: RunResult): string[] {
       out.push(`ค่าที่ส่งให้ ${name}() ต้องเป็น ${want.map(showValue).join(', ')} แต่ได้ ${got.map(showValue).join(', ')}`);
     }
   }
+  for (const [name, want] of Object.entries(goal.sequence ?? {})) {
+    const got = sim.history[name] ?? [];
+    const show = (a: typeof got) => (a.length ? a.map((x) => x.map(showValue).join(', ')).join(' → ') : 'ไม่ได้เรียกเลย');
+    const same = got.length === want.length && want.every((w, i) => w.length === got[i].length && w.every((x, j) => sameValue(got[i][j], x)));
+    if (!same) out.push(`ลำดับของ ${name}() ต้องเป็น ${show(want)} แต่ที่ทำคือ ${show(got)}`);
+  }
+  if (goal.maxMs !== undefined) {
+    const total = res.trace.reduce((s, t) => s + t.wait, 0);
+    if (total > goal.maxMs) out.push(`ช้าเกินไป: ใช้เวลา ${Math.round(total / 100) / 10} วินาที ต้องไม่เกิน ${goal.maxMs / 1000} วินาที`);
+  }
   for (const name of goal.called ?? []) if (!res.calls.includes(name)) out.push(`ต้องเรียก ${name}()`);
   for (const name of goal.notCalled ?? []) if (res.calls.includes(name)) out.push(`กรณีนี้ต้องไม่เรียก ${name}()`);
   if (goal.minDelay) {

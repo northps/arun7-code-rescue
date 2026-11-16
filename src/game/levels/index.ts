@@ -38,6 +38,10 @@ import { q02 } from './act6/q02';
 import { q03 } from './act6/q03';
 import { q04 } from './act6/q04';
 import { q05 } from './act6/q05';
+import { r01 } from './act7/r01';
+import { r02 } from './act7/r02';
+import { r03 } from './act7/r03';
+import { r04 } from './act7/r04';
 
 export const LEVELS: Level[] = [
   l01, l02, l03, l04, l05, l06, l07, l08, l09,
@@ -46,6 +50,7 @@ export const LEVELS: Level[] = [
   o01, o02, o03, o04, o05, o06,
   p01, p02, p03, p04, p05, p06,
   q01, q02, q03, q04, q05,
+  r01, r02, r03, r04,
 ];
 
 /** เนื้อเรื่องทั้ง 7 องก์ องก์ที่ยังไม่มีด่านใน LEVELS จะแสดงเป็นด่านล็อกตามชื่อใน planned */
@@ -97,7 +102,7 @@ export const ACTS: ActInfo[] = [
     title: 'ศึกสุดท้าย',
     blurb: 'กลับขึ้นยานอรุณ-7 ยึดห้องเครื่องคืน ปิดประตูมิติของชาวเคลธ',
     teaches: 'รวมทุกเรื่อง ออกแบบโปรแกรมเองทั้งชิ้น',
-    planned: ['เทียบท่าอรุณ-7', 'ยึดห้องเครื่อง', 'ฝ่าทางเดินสุดท้าย', 'ปิดประตูมิติ'],
+    planned: [],
   },
 ];
 

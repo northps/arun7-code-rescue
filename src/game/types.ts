@@ -11,6 +11,8 @@ export interface ActionSpec {
   label: string;
   /** ส่งค่าถูกแล้วประตูเปิด */
   opensDoor?: boolean;
+  /** เรียกแล้วจบการรันทันที (คำสั่งสุดท้ายของภารกิจ) */
+  ends?: boolean;
 }
 
 export type PinDevice = 'lamp' | 'lock';
@@ -51,7 +53,9 @@ export interface WorldSpec {
    * รถเคลื่อนที่ระหว่าง delay: ความเร็ว 150 ทั้งสองล้อ = 1 ช่องต่อ 500 ms · setMotor(150, -150) = หมุนขวา 90° ใน 300 ms
    * cm = ความกว้างของ 1 ช่องเป็นเซนติเมตร (ปกติ 80) · noise = ค่าที่บวกเข้ากับ readDistance() แต่ละครั้ง ตามลำดับ
    */
-  drive?: { cm?: number; noise?: number[] };
+  drive?: { cm?: number; noise?: number[]; stay?: boolean };
+  // drive.stay = true: หยุดบนวงสีเขียวแล้วโปรแกรมยังรันต่อ (ปกติหยุดบนวง = จบการรัน)
+  // ในโหมดขับที่มีเคลธ ('A' + targets): seeKleth() คืน true เมื่อสิ่งที่อยู่ตรงหน้าคือเคลธ และ fire() ยิงตัวที่อยู่ตรงหน้า
   /**
    * รีโมต (องก์ 6): ตัวอักษรที่ส่งเข้ามาทาง Serial ตามเวลา (ms นับจากเริ่มรัน) อ่านด้วย Serial.available() / Serial.read()
    * เวลาในโหมดขับเดินเฉพาะตอน delay
@@ -116,6 +120,10 @@ export interface Goal {
   frontCm?: [number, number];
   /** คลังรหัสต้องเปิดได้ (tryCode ถูกภายในจำนวนครั้งที่กำหนด) */
   vaultOpen?: boolean;
+  /** ค่าที่ส่งให้คำสั่งทุกครั้ง ตามลำดับ เช่น { startSystem: [[0], [2]] } */
+  sequence?: Record<string, HostValue[][]>;
+  /** เวลารอรวมต้องไม่เกิน (ms) */
+  maxMs?: number;
   /** คำสั่งต้องถูกเรียกกี่ครั้งพอดี */
   calledTimes?: Record<string, number>;
 }

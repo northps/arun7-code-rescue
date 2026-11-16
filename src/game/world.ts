@@ -86,6 +86,8 @@ export class WorldSim implements Host {
   lastFed = 0;
   overheated = false;
   fell = false;
+  history: Record<string, HostValue[][]> = {};
+  alienCells: string[] = [];
 
   constructor(public spec: WorldSpec, public goal: Goal = {}) {
     const m = parseMap(spec.map);
@@ -102,6 +104,7 @@ export class WorldSim implements Host {
     for (const name of spec.api ?? []) this.fns[name] = { min: argc[name] ?? 0, max: argc[name] ?? 0 };
     // เป้ายิง
     const places = m.find('A').length;
+    this.alienCells = m.find('A').map((c) => c.x + ',' + c.y);
     let left = spec.targets ?? 0;
     for (let i = 0; i < places; i++) {
       if (spec.hostage === i + 1) this.slots.push('h');
@@ -143,6 +146,7 @@ export class WorldSim implements Host {
     }
     if (spec.drive) {
       this.wallClock = true;
+      if (places > 0) this.fns.seeKleth = { min: 0, max: 0, ret: 'bool' };
       this.fns.atPad = { min: 0, max: 0, ret: 'bool' };
       this.fns.setMotor = { min: 2, max: 2 };
       this.fns.readDistance = { min: 0, max: 0, ret: 'int' };
@@ -160,14 +164,15 @@ export class WorldSim implements Host {
   blocked(x: number, y: number): boolean {
     const c = this.cell(x, y);
     if (c === 'D') return this.door !== 'open';
-    return c === '#' || c === ' ' || c === 'S' || c === 'X' || c === 'T' || c === 'L' || c === 'G' || c === 'W' || c === 'A' || c === 'U';
+    if (c === 'A') return !!this.slots[this.alienCells.indexOf(x + ',' + y)];
+    return c === '#' || c === ' ' || c === 'S' || c === 'X' || c === 'T' || c === 'L' || c === 'G' || c === 'W' || c === 'U';
   }
   onPad(): boolean {
     return this.cell(this.bot.x, this.bot.y) === 'P';
   }
 
   /** ระยะจริงจากหน้ารถถึงสิ่งกีดขวางตรงหน้า (ซม.) และจุดที่ลำคลื่นชน */
-  frontDistance(): { cm: number; x: number; y: number } {
+  frontDistance(): { cm: number; x: number; y: number; cell: string } {
     const rad = (this.pose.th * Math.PI) / 180;
     const sx = Math.sin(rad), sy = -Math.cos(rad);
     const cm = this.spec.drive?.cm ?? 80;
@@ -177,7 +182,13 @@ export class WorldSim implements Host {
       d = i / 200;
       if (this.blocked(Math.round(x0 + sx * d), Math.round(y0 + sy * d))) break;
     }
-    return { cm: Math.min(400, Math.round(d * cm)), x: x0 + sx * d, y: y0 + sy * d };
+    return { cm: Math.min(400, Math.round(d * cm)), x: x0 + sx * d, y: y0 + sy * d, cell: Math.round(x0 + sx * d) + ',' + Math.round(y0 + sy * d) };
+  }
+
+  /** โหมดขับ: ตำแหน่งในรายการเป้าของเคลธที่อยู่ตรงหน้า (-1 = ไม่มี) */
+  aheadAlien(): number {
+    const i = this.alienCells.indexOf(this.frontDistance().cell);
+    return i >= 0 && this.slots[i] ? i : -1;
   }
 
   /** โหมดขับ: เดินเวลา ms ให้รถเคลื่อนที่ตามความเร็วล้อ */
@@ -317,7 +328,13 @@ export class WorldSim implements Host {
         ctx.emit({ type: 'door', state: 'locked' });
         return;
       case 'fire':
-        return this.shoot(ctx, this.slots.findIndex((s) => s === 'k'));
+        return this.shoot(ctx, this.spec.drive ? this.aheadAlien() : this.slots.findIndex((s) => s === 'k'));
+      case 'seeKleth': {
+        if (!this.spec.drive) break;
+        const see = this.aheadAlien() >= 0;
+        ctx.emit({ type: 'see', see });
+        return see;
+      }
       case 'fireAt':
         return this.shoot(ctx, Math.trunc(Number(args[0])) - 1);
       case 'aimLeft':
@@ -380,7 +397,7 @@ export class WorldSim implements Host {
         this.motor = { l: clamp(args[0]), r: clamp(args[1]) };
         ctx.emit({ type: 'motor', l: this.motor.l, r: this.motor.r });
         // หยุดสนิทบนจุดหมาย = ถึงแล้ว จบการรัน
-        if (this.spec.drive && this.motor.l === 0 && this.motor.r === 0 && this.onPad() && !this.crashed) {
+        if (this.spec.drive && !this.spec.drive.stay && this.motor.l === 0 && this.motor.r === 0 && this.onPad() && !this.crashed) {
           this.halted = 'arrived';
           ctx.emit({ type: 'pad', x: this.bot.x, y: this.bot.y });
         }
@@ -464,6 +481,8 @@ export class WorldSim implements Host {
     const action = this.spec.actions?.[name];
     if (action) {
       this.lastArgs[name] = args;
+      (this.history[name] ??= []).push(args);
+      if (action.ends) this.halted = 'done';
       const want = this.goal.set?.[name];
       const ok = want ? want.length === args.length && want.every((w, i) => sameValue(args[i], w)) : undefined;
       ctx.emit({ type: 'panel', name, label: action.label, text: args.length ? args.map(showValue).join(', ') : 'ON', ok });
