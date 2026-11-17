@@ -1712,10 +1712,13 @@ export class WorldView {
       const b = this.bot.position;
       const k = Math.min(2.2, Math.max(1, 1.15 / aspect));
       // จอแนวตั้ง: ก้มกล้องลงให้บิตขึ้นไปอยู่ครึ่งบน (ครึ่งล่างเป็นที่ของชื่อเกม)
-      const tall = aspect < 1 ? 1 : 0;
+      // ต้องตรงกับ CSS ของหน้าปก: จอกว้าง (ชื่อเกมอยู่ซ้าย) เฉพาะเมื่อกว้าง >= 860 และกว้างกว่าสูง 1.1 เท่า
+      const tall = window.innerWidth >= 860 && window.innerWidth / window.innerHeight >= 1.1 ? 0 : 1;
       if (tall) {
-        this.target.set(b.x - 0.1, -0.05, b.z - 0.7);
-        this.camBase.set(b.x + 1.2 * k, 0.8 + 0.55 * k, b.z + 2.7 * k);
+        // ภาพกว้างกว่าสูง (แท็บเล็ต หน้าต่างเล็กบนคอม): ถอยกล้องออก ไม่อย่างนั้นบิตใหญ่จนหัวหลุดจอ
+        const kt = Math.max(k, 1.75);
+        this.target.set(b.x - 0.1, aspect > 1 ? 0.15 : -0.05, b.z - 0.7);
+        this.camBase.set(b.x + 1.2 * kt, 0.8 + 0.55 * kt, b.z + 2.7 * kt);
       } else {
         // จอกว้าง: ชื่อเกมอยู่ซ้าย จึงเลื่อนบิตและประตูไปทางขวาของภาพ
         this.target.set(b.x - 0.95, 0.6, b.z - 0.7);

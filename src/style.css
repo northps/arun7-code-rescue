@@ -1165,13 +1165,16 @@ button.level:not(.locked):active {
   font-size: 0.82rem;
 }
 .cover h1 span {
-  font-size: clamp(2rem, 9vw, 3.2rem);
+  font-size: clamp(1.7rem, min(9vw, 5.2dvh), 3.2rem);
   letter-spacing: 0.01em;
   text-shadow: 0 2px 0 #0a1830, 0 0 22px rgba(53, 224, 255, 0.45);
 }
 .cover h1 b {
-  font-size: clamp(3.6rem, 19vw, 6.4rem);
-  line-height: 1.12;
+  font-size: clamp(3rem, min(19vw, 11dvh), 6.4rem);
+  /* สระล่าง (อุ) ต้องมีที่ ไม่อย่างนั้นถูกตัดเพราะสีตัวอักษรมาจากพื้นหลัง */
+  line-height: 1.25;
+  padding: 0.04em 0 0.2em;
+  margin-bottom: -0.12em;
   background: linear-gradient(180deg, #d9ffe9 0%, #3dff9a 42%, #12b8a0 100%);
   -webkit-background-clip: text;
   background-clip: text;
@@ -1262,5 +1265,17 @@ button.level:not(.locked):active {
   .cover-start,
   .cover-code em {
     animation: none;
+  }
+}
+
+@media (max-height: 720px) {
+  .cover .title-box {
+    gap: 8px;
+  }
+  .cover .lead {
+    display: none;
+  }
+  .cover-start {
+    min-height: 52px;
   }
 }
