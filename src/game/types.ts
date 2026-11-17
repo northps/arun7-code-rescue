@@ -65,6 +65,8 @@ export interface WorldSpec {
   watchdog?: { name: string; maxGap: number; label: string };
   /** รูปร่างของตัวที่ขับ: 'shuttle' = บิตนั่งในกระสวย */
   vehicle?: 'shuttle';
+  /** ฉากหน้าปก: กล้องต่ำใกล้ตัวบิต ประตูเปิด มีแสงสีม่วงของเคลธหลังประตู */
+  hero?: boolean;
   /** หน้าตาของฉาก: ไม่ใส่ = ในยาน, 'planet' = ซากสถานีบนดาวเวฬา */
   theme?: 'planet';
   /** ค่าที่ readNumber() จะได้ ตามลำดับ */

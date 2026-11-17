@@ -412,6 +412,15 @@ export class WorldView {
     this.alert = true;
     this.fitCamera();
     this.reset();
+    if (spec.hero) {
+      this.setDoor('open', true);
+      const glowLight = new THREE.PointLight(C.klethGlow, 15, 9, 1.6);
+      glowLight.position.copy(this.doorPos).add(new THREE.Vector3(0, 0.9, -0.9));
+      this.root.add(glowLight);
+      const haze = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.5), new THREE.MeshBasicMaterial({ color: C.klethGlow, transparent: true, opacity: 0.1, depthWrite: false }));
+      haze.position.copy(this.doorPos).add(new THREE.Vector3(0, 0.7, -0.35));
+      this.root.add(haze);
+    }
   }
 
   /** ฉากดาวเวฬา: พื้นดิน ผลึกเรืองแสง ตะไคร่บนซากผนัง และดวงจันทร์ */
@@ -1698,6 +1707,25 @@ export class WorldView {
     const aspect = Math.max(0.3, rect.width / Math.max(1, rect.height));
     this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
+    if (this.spec?.hero) {
+      // หน้าปก: กล้องต่ำ ใกล้ตัวบิต มองผ่านไหล่ไปที่ประตู
+      const b = this.bot.position;
+      const k = Math.min(2.2, Math.max(1, 1.15 / aspect));
+      // จอแนวตั้ง: ก้มกล้องลงให้บิตขึ้นไปอยู่ครึ่งบน (ครึ่งล่างเป็นที่ของชื่อเกม)
+      const tall = aspect < 1 ? 1 : 0;
+      if (tall) {
+        this.target.set(b.x - 0.1, -0.05, b.z - 0.7);
+        this.camBase.set(b.x + 1.2 * k, 0.8 + 0.55 * k, b.z + 2.7 * k);
+      } else {
+        // จอกว้าง: ชื่อเกมอยู่ซ้าย จึงเลื่อนบิตและประตูไปทางขวาของภาพ
+        this.target.set(b.x - 0.95, 0.6, b.z - 0.7);
+        this.camBase.set(b.x + 0.5, 1.3, b.z + 3.7);
+      }
+      this.camera.position.copy(this.camBase);
+      this.camera.lookAt(this.target);
+      this.key.target.position.set(0, 0, 0);
+      return;
+    }
     this.target.set(0, 0.35, 0.15);
     const el = (44 * Math.PI) / 180;
     const az = (-20 * Math.PI) / 180;
@@ -1815,8 +1843,9 @@ export class WorldView {
     }
     // กล้องแกว่งเบา ๆ
     this.camera.position.copy(this.camBase);
-    this.camera.position.x += Math.sin(t * 0.25) * 0.25;
-    this.camera.position.y += Math.sin(t * 0.33) * 0.08;
+    const sway = this.spec?.hero ? 2.2 : 1;
+    this.camera.position.x += Math.sin(t * 0.25) * 0.25 * sway;
+    this.camera.position.y += Math.sin(t * 0.33) * 0.08 * sway;
     this.camera.lookAt(this.target);
 
     if (this.composer) this.composer.render();

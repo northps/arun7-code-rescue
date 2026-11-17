@@ -9,10 +9,20 @@ import { sfx } from './sound';
 
 /** ฉากโชว์หลังหน้าแรก */
 const TITLE_SPEC: WorldSpec = {
-  map: ['  .G.  ', ' .AAA. ', '###D###', '#L...L#', '#.....#', '#..B..#', '#######'],
-  dir: 'N',
+  map: ['  AAA  ', ' .....  ', '###D###', '#L...L#', '#.....#', '#..B..#', '#.....#', '#######'],
+  dir: 'S',
   aliens: 3,
+  hero: true,
 };
+
+/** บรรทัดโค้ดที่พิมพ์วนบนหน้าปก (ทุกบรรทัดมาจากด่านจริง) */
+const COVER_CODE = [
+  'forward();',
+  'if (scanAliens() == 0) openDoor();',
+  'for (int i = 0; i < 3; i++) fire();',
+  'while (readDistance() > 8) creep();',
+  'Serial.println("กลับบ้านกัน");',
+];
 
 /** ฉากหลังของหน้าจอจบเกม: ห้องบนยานที่ไฟกลับมาติด */
 const END_SPEC: WorldSpec = {
@@ -58,28 +68,49 @@ export class App {
     const started = Object.keys(loadProgress().stars).length > 0;
     const total = LEVELS.reduce((s, l) => s + levelStars(l), 0);
     const art = h('div', { class: 'title-art' });
+    const typed = h('span', {});
+    const codeLine = h('div', { class: 'cover-code' }, h('i', {}, '>'), typed, h('em', {}));
+    // พิมพ์โค้ดทีละตัว ค้างไว้ ลบ แล้วขึ้นบรรทัดถัดไป
+    let line = 0, pos = 0, hold = 0;
+    const timer = window.setInterval(() => {
+      if (!codeLine.isConnected) {
+        window.clearInterval(timer);
+        return;
+      }
+      const text = COVER_CODE[line];
+      if (pos < text.length) pos++;
+      else if (++hold > 26) {
+        hold = 0;
+        pos = 0;
+        line = (line + 1) % COVER_CODE.length;
+      }
+      typed.textContent = COVER_CODE[line].slice(0, pos);
+    }, 70);
     this.root.replaceChildren(
       h(
         'div',
-        { class: 'title-screen' },
+        { class: 'title-screen cover' },
         art,
+        h('div', { class: 'cover-fx' }),
         h(
           'div',
           { class: 'title-box' },
           h('div', { class: 'eyebrow' }, 'เกมฝึกเขียนโปรแกรม Arduino ตั้งแต่ศูนย์'),
           h('h1', {}, h('span', {}, 'โค้ดกู้ยาน'), h('b', {}, 'อรุณ-7')),
-          h(
-            'p',
-            { class: 'lead' },
-            'ชาวเคลธบุกขึ้นยาน ระบบอัตโนมัติถูกปิดทั้งลำ อุปกรณ์ทุกชิ้นทำงานได้ด้วยโปรแกรมที่คุณเขียนเท่านั้น',
-          ),
-          h('button', { class: 'btn run big', onclick: () => {
+          codeLine,
+          h('p', { class: 'lead' }, 'ชาวเคลธบุกขึ้นยาน เหลือแค่คุณกับหุ่นตัวเล็กชื่อบิต ทุกอย่างบนยานขยับได้ด้วยโค้ดที่คุณเขียนเองเท่านั้น'),
+          h('div', { class: 'cover-chips' }, h('span', {}, '7 องก์'), h('span', {}, `${LEVELS.length} ด่าน`), h('span', {}, 'เขียนโค้ดจริงทุกด่าน')),
+          h('button', { class: 'btn run big cover-start', onclick: () => {
             sfx.tap();
             this.openLevel(this.nextLevelToPlay());
-          } }, started ? 'เล่นต่อ ▶' : 'เริ่มเล่น ▶'),
-          h('button', { class: 'btn ghost big', onclick: () => this.showMap() }, 'แผนที่ด่าน'),
-          LEVELS.every((l) => levelStars(l) > 0) ? h('button', { class: 'btn ghost big', onclick: () => this.showEnding() }, 'ดูตอนจบ') : null,
-          started ? h('p', { class: 'dim center' }, `ดาวที่เก็บได้ ${total} / ${LEVELS.length * 3}`) : null,
+          } }, started ? 'เล่นต่อ ▶' : 'เริ่มภารกิจ ▶'),
+          h(
+            'div',
+            { class: 'row' },
+            h('button', { class: 'btn ghost wide', onclick: () => this.showMap() }, 'แผนที่ด่าน'),
+            LEVELS.every((l) => levelStars(l) > 0) ? h('button', { class: 'btn ghost wide', onclick: () => this.showEnding() }, 'ดูตอนจบ') : null,
+          ),
+          started ? h('p', { class: 'dim center' }, `★ ${total} / ${LEVELS.length * 3}`) : null,
         ),
       ),
     );
