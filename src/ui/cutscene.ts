@@ -13,6 +13,9 @@ const SPEAKERS: Record<string, { face: string; cls: string }> = {
   บิต: { face: '🤖', cls: 'bit' },
   ระบบยาน: { face: '📢', cls: 'ship' },
   เสียงจากวิทยุ: { face: '📻', cls: 'radio' },
+  วิทยุ: { face: '📻', cls: 'radio' },
+  ลูกเรือ: { face: '🧑‍🚀', cls: 'crew' },
+  เคลธ: { face: '👾', cls: 'radio' },
 };
 
 /** บรรยายยาวเกินไปให้ตัดเป็นสองช่วงที่ช่องว่างใกล้กลางที่สุด (ภาษาไทยเว้นวรรคระหว่างประโยค) */
@@ -34,11 +37,32 @@ function splitLong(text: string, max = 150): string[] {
   return [...splitLong(t.slice(0, best), max), ...splitLong(t.slice(best + 1), max)];
 }
 
+const SCRIPT_LINE = /^(มาลี|บิต|ระบบยาน|วิทยุ|ลูกเรือ|เคลธ)\s*:\s*(.+)$/;
+
 /**
- * ตัดเนื้อเรื่องเป็นจังหวะ: ข้อความในเครื่องหมายคำพูดที่ยาวพอเป็น "คำพูด" ของตัวละคร ที่เหลือเป็นบรรยาย
+ * บทแบบบรรทัดต่อบรรทัด (รูปแบบที่ด่านใช้): หนึ่งบรรทัด = หนึ่งจังหวะ
+ * "มาลี: ..." = คำพูดของตัวละคร (มาลี บิต ระบบยาน วิทยุ ลูกเรือ เคลธ) · "— จบองก์ 1" = ป้ายจบ · นอกนั้นเป็นบรรยาย
+ */
+function scriptBeats(text: string): Beat[] {
+  const out: Beat[] = [];
+  for (const raw of text.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const end = /^—\s*(จบ.*)$/.exec(line);
+    const say = SCRIPT_LINE.exec(line);
+    if (end) out.push({ kind: 'end', text: end[1].trim() });
+    else if (say) out.push({ kind: 'say', who: say[1], text: say[2].trim() });
+    else for (const part of splitLong(line, 170)) out.push({ kind: 'narr', text: part });
+  }
+  return out;
+}
+
+/**
+ * (รูปแบบเก่า: ข้อความย่อหน้าเดียว) ตัดเนื้อเรื่องเป็นจังหวะ: ข้อความในเครื่องหมายคำพูดที่ยาวพอเป็น "คำพูด" ของตัวละคร ที่เหลือเป็นบรรยาย
  * ผู้พูดดูจากคำบรรยายที่อยู่ก่อนหน้า (มาลี / เสียงประกาศ / บิต) ถ้าไม่มีชื่อ ใช้ผู้พูดคนล่าสุด
  */
 export function splitBeats(story: string): Beat[] {
+  if (story.includes('\n')) return scriptBeats(story);
   const out: Beat[] = [];
   let text = story.trim();
   let end: string | null = null;

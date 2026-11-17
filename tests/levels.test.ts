@@ -690,33 +690,46 @@ describe('เสียงของเหตุการณ์ในฉาก', (
   });
 });
 
-describe('ฉากเล่าเรื่อง: ตัดเนื้อเรื่องเป็นจังหวะ', () => {
-  const squash = (s: string) => s.replace(/["\s—:：]/g, '');
-  test('ไม่มีตัวอักษรของเนื้อเรื่องหายไปหรือเพิ่มมา ในทุกด่าน', () => {
+describe('ฉากเล่าเรื่อง: บทของทุกด่าน', () => {
+  const find = (id: string) => LEVELS.find((l) => l.id === id)!;
+  const WHO = /^(มาลี|บิต|ระบบยาน|วิทยุ|ลูกเรือ|เคลธ)\s*:\s*/;
+  test('ทุกบรรทัดของบทกลายเป็นจังหวะครบ ไม่มีตัวอักษรหาย', () => {
+    const squash = (s: string) => s.replace(/\s/g, '');
     for (const l of LEVELS) for (const text of [l.story, l.outro ?? '']) {
+      expect(text.includes('\n'), l.id).toBe(true);
       const beats = splitBeats(text);
-      const joined = beats.map((b) => (b.kind === 'card' ? '' : b.text)).join('');
-      expect(squash(joined), l.id).toBe(squash(text));
-      for (const b of beats) if (b.kind !== 'card') expect(b.text.length, l.id).toBeGreaterThan(0);
+      const want = text.split('\n').map((x) => x.trim().replace(WHO, '').replace(/^—\s*/, '')).join('');
+      const got = beats.map((b) => (b.kind === 'card' ? '' : b.text)).join('');
+      expect(squash(got), l.id).toBe(squash(want));
     }
   });
-  test('คำพูดของมาลีและเสียงประกาศถูกแยกออกมาพร้อมชื่อผู้พูด', () => {
-    const find = (id: string) => LEVELS.find((l) => l.id === id)!;
-    const first = splitBeats(find('1-1').story);
-    expect(first.find((b) => b.kind === 'say')).toMatchObject({ who: 'ระบบยาน' });
+  test('ทุกด่านมีจังหวะพอให้เป็นฉาก และไม่มีจังหวะที่ยาวเกินกล่องข้อความ', () => {
+    for (const l of LEVELS) {
+      expect(splitBeats(l.story).length, l.id).toBeGreaterThanOrEqual(4);
+      expect(splitBeats(l.outro ?? '').length, l.id).toBeGreaterThanOrEqual(2);
+      for (const b of [...splitBeats(l.story), ...splitBeats(l.outro ?? '')]) if (b.kind !== 'card') expect(b.text.length, l.id).toBeLessThanOrEqual(170);
+    }
+  });
+  test('ผู้พูดและป้ายจบองก์ถูกอ่านจากบท', () => {
+    expect(splitBeats(find('1-1').story).find((b) => b.kind === 'say')).toMatchObject({ who: 'ระบบยาน' });
     const end6 = splitBeats(find('6-5').outro!);
-    const say = end6.filter((b) => b.kind === 'say');
-    expect(say[say.length - 1]).toMatchObject({ who: 'มาลี' });
+    expect(end6[end6.length - 2]).toMatchObject({ kind: 'say', who: 'มาลี' });
     expect(end6[end6.length - 1]).toEqual({ kind: 'end', text: 'จบองก์ 6' });
     const last = splitBeats(find('7-4').outro!);
+    expect(last[last.length - 2]).toEqual({ kind: 'say', who: 'บิต', text: 'Serial.println("กลับบ้านกัน");' });
     expect(last[last.length - 1]).toEqual({ kind: 'end', text: 'จบ' });
-    expect(last.some((b) => b.kind === 'narr' && b.text.includes('Serial.println("กลับบ้านกัน");'))).toBe(true);
-  });
-  test('ไม่มีจังหวะบรรยายที่ยาวเกิน 200 ตัวอักษร และทุกด่านมีอย่างน้อย 2 จังหวะ', () => {
-    for (const l of LEVELS) {
-      const beats = splitBeats(l.story);
-      expect(beats.length, l.id).toBeGreaterThanOrEqual(2);
-      for (const b of beats) if (b.kind === 'narr') expect(b.text.length, l.id).toBeLessThanOrEqual(200);
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      const lv = LEVELS.filter((l) => l.act === n);
+      const out = splitBeats(lv[lv.length - 1].outro!);
+      expect(out[out.length - 1]).toEqual({ kind: 'end', text: `จบองก์ ${n}` });
     }
+  });
+  test('รูปแบบเก่า (ย่อหน้าเดียวมีเครื่องหมายคำพูด) ยังตัดได้', () => {
+    const beats = splitBeats('ลิฟต์เลื่อนลง เสียงมาลีดังมาอีกครั้ง: "ดีมาก ชั้นล่างสุดคือโรงเก็บยาน แต่ระวัง" — จบองก์ 9');
+    expect(beats).toEqual([
+      { kind: 'narr', text: 'ลิฟต์เลื่อนลง เสียงมาลีดังมาอีกครั้ง' },
+      { kind: 'say', who: 'มาลี', text: 'ดีมาก ชั้นล่างสุดคือโรงเก็บยาน แต่ระวัง' },
+      { kind: 'end', text: 'จบองก์ 9' },
+    ]);
   });
 });

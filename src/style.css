@@ -1538,3 +1538,17 @@ button.level:not(.locked):active {
     animation: none;
   }
 }
+
+.cs-box.crew {
+  --who: #7fe9a8;
+}
+/* บิตไม่พูด: ข้อความของบิตคือเสียงบี๊บกับตัวหนังสือบนจอที่หน้าอก */
+.cs-box.bit .cs-text {
+  font-family: var(--mono);
+  color: #9ff3ff;
+  letter-spacing: 0.02em;
+}
+.cs-box.bit .cs-text::before,
+.cs-box.bit .cs-text::after {
+  content: none;
+}
