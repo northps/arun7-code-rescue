@@ -6,6 +6,8 @@ import { Level, LessonBlock, Puzzle } from '../game/types';
 import { WorldView } from '../view/worldView';
 import { esc, h, hl, rich, sleep } from './dom';
 import { sfx } from './sound';
+import { Beat, CutsceneHandle, playCutscene, splitBeats } from './cutscene';
+import { ACTS, LEVELS } from '../game/levels';
 
 const KIND_LABEL: Record<Puzzle['kind'], string> = {
   blank: 'เติมช่องว่าง',
@@ -72,7 +74,35 @@ export class PlayScreen {
     this.ro.observe(this.stage);
     view.start();
     this.loadPuzzle(Math.min(start, level.puzzles.length - 1));
-    if (!loadProgress().seen[level.id]) this.showLesson(true);
+    if (!loadProgress().seen[level.id]) void this.intro();
+  }
+
+  cutscene: CutsceneHandle | null = null;
+
+  /** จังหวะของฉากเปิดด่าน: ป้ายองก์ (เฉพาะด่านแรกขององก์) ป้ายด่าน แล้วเนื้อเรื่อง */
+  private introBeats(): Beat[] {
+    const L = this.level;
+    const beats: Beat[] = [];
+    const act = ACTS.find((a) => a.n === L.act);
+    if (act && LEVELS.find((x) => x.act === L.act) === L) beats.push({ kind: 'card', kicker: `องก์ ${act.n}`, title: act.title, sub: act.blurb });
+    beats.push({ kind: 'card', kicker: `ด่าน ${L.id}`, title: L.title });
+    return [...beats, ...splitBeats(L.story)];
+  }
+
+  private async runCutscene(beats: Beat[]): Promise<void> {
+    this.cutscene?.skip();
+    const c = playCutscene(this.el, beats);
+    this.cutscene = c;
+    await c.done;
+    if (this.cutscene === c) this.cutscene = null;
+  }
+
+  /** เปิดด่านครั้งแรก: ฉากเล่าเรื่อง แล้วต่อด้วยบทเรียน */
+  private async intro(): Promise<void> {
+    const id = this.playId;
+    await this.runCutscene(this.introBeats());
+    if (id !== this.playId || !this.el.isConnected) return;
+    this.showLesson(true);
   }
 
   get p(): Puzzle {
@@ -85,6 +115,7 @@ export class PlayScreen {
   }
 
   destroy(): void {
+    this.cutscene?.skip();
     this.playId++;
     this.ro.disconnect();
     this.view.stop();
@@ -674,7 +705,12 @@ export class PlayScreen {
     const L = this.level;
     this.openModal(
       h('div', { class: 'lesson-art' }, h('span', {}, `องก์ ${L.act} · ด่าน ${L.id}`), h('h2', {}, L.title)),
-      h('p', { class: 'story' }, L.story),
+      h('button', { class: 'btn ghost story-replay', onclick: () => {
+        this.closeModal();
+        void this.runCutscene(this.introBeats()).then(() => {
+          if (this.el.isConnected) this.showLesson(first);
+        });
+      } }, '▶ ดูฉากเปิดของด่านนี้'),
       h('div', { class: 'lesson' }, h('h3', {}, L.lesson.title), h('small', {}, `ตรงกับบทเรียน ${L.ref}`), ...L.lesson.blocks.map((b) => this.blockEl(b))),
       h('button', { class: 'btn run big', onclick: () => {
         loadProgress().seen[L.id] = true;
@@ -708,11 +744,19 @@ export class PlayScreen {
         } }, 'เล่นข้อนี้อีกครั้ง'),
         h('button', { class: 'btn run', onclick: () => {
           this.closeModal();
-          if (last) this.showLevelDone();
+          if (last) void this.outro();
           else this.loadPuzzle(this.pi + 1);
         } }, last ? 'จบด่าน ▶' : 'ข้อต่อไป ▶'),
       ),
     );
+  }
+
+  /** จบด่าน: ฉากเล่าเรื่องปิดด่าน แล้วต่อด้วยสรุปดาว */
+  private async outro(): Promise<void> {
+    const L = this.level;
+    if (L.outro) await this.runCutscene(splitBeats(L.outro));
+    if (!this.el.isConnected) return;
+    this.showLevelDone();
   }
 
   private showLevelDone(): void {
@@ -724,7 +768,6 @@ export class PlayScreen {
     this.openModal(
       h('div', { class: 'lesson-art' }, h('span', {}, `จบด่าน ${L.id}`), h('h2', {}, L.title)),
       starEl,
-      L.outro ? h('p', { class: 'story' }, L.outro) : null,
       h('p', { class: 'dim center' }, `เรื่องที่ได้ฝึก: ${L.concept}`),
       h(
         'div',

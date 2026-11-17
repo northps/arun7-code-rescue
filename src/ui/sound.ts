@@ -146,6 +146,8 @@ const lastAt: Record<string, number> = {};
 export const sfx = {
   tap: () => tone(520, 0.05, 'triangle', 0.04),
   step: () => tone(880, 0.03, 'sine', 0.02),
+  /** เสียงตัวหนังสือขึ้นในฉากเล่าเรื่อง */
+  type: () => tone(1250, 0.018, 'square', 0.008),
   ok: () => {
     tone(660, 0.1, 'triangle');
     tone(990, 0.16, 'triangle', 0.06, 0.09);

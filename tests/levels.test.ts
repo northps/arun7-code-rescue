@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import { buildCode, initialState, isComplete, runPuzzle, solutionState, validateLevel } from '../src/game/judge';
 import { ACTS, LEVELS } from '../src/game/levels';
 import { EVENT_SOUNDS, sfx } from '../src/ui/sound';
+import { splitBeats } from '../src/ui/cutscene';
 
 describe('ข้อมูลด่าน', () => {
   test('id ไม่ซ้ำ และทุกด่านมีโจทย์ 2–3 ข้อ', () => {
@@ -686,5 +687,36 @@ describe('เสียงของเหตุการณ์ในฉาก', (
   test('เล่นเสียงในที่ที่ไม่มี WebAudio แล้วไม่พัง', () => {
     for (const type of Object.keys(EVENT_SOUNDS)) expect(() => sfx.event({ type })).not.toThrow();
     expect(() => sfx.finale()).not.toThrow();
+  });
+});
+
+describe('ฉากเล่าเรื่อง: ตัดเนื้อเรื่องเป็นจังหวะ', () => {
+  const squash = (s: string) => s.replace(/["\s—:：]/g, '');
+  test('ไม่มีตัวอักษรของเนื้อเรื่องหายไปหรือเพิ่มมา ในทุกด่าน', () => {
+    for (const l of LEVELS) for (const text of [l.story, l.outro ?? '']) {
+      const beats = splitBeats(text);
+      const joined = beats.map((b) => (b.kind === 'card' ? '' : b.text)).join('');
+      expect(squash(joined), l.id).toBe(squash(text));
+      for (const b of beats) if (b.kind !== 'card') expect(b.text.length, l.id).toBeGreaterThan(0);
+    }
+  });
+  test('คำพูดของมาลีและเสียงประกาศถูกแยกออกมาพร้อมชื่อผู้พูด', () => {
+    const find = (id: string) => LEVELS.find((l) => l.id === id)!;
+    const first = splitBeats(find('1-1').story);
+    expect(first.find((b) => b.kind === 'say')).toMatchObject({ who: 'ระบบยาน' });
+    const end6 = splitBeats(find('6-5').outro!);
+    const say = end6.filter((b) => b.kind === 'say');
+    expect(say[say.length - 1]).toMatchObject({ who: 'มาลี' });
+    expect(end6[end6.length - 1]).toEqual({ kind: 'end', text: 'จบองก์ 6' });
+    const last = splitBeats(find('7-4').outro!);
+    expect(last[last.length - 1]).toEqual({ kind: 'end', text: 'จบ' });
+    expect(last.some((b) => b.kind === 'narr' && b.text.includes('Serial.println("กลับบ้านกัน");'))).toBe(true);
+  });
+  test('ไม่มีจังหวะบรรยายที่ยาวเกิน 200 ตัวอักษร และทุกด่านมีอย่างน้อย 2 จังหวะ', () => {
+    for (const l of LEVELS) {
+      const beats = splitBeats(l.story);
+      expect(beats.length, l.id).toBeGreaterThanOrEqual(2);
+      for (const b of beats) if (b.kind === 'narr') expect(b.text.length, l.id).toBeLessThanOrEqual(200);
+    }
   });
 });
